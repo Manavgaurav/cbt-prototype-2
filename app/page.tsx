@@ -642,6 +642,7 @@ export default function Page() {
             animate={{ opacity: 1, y: 0 }} 
             transition={{ duration: 0.2 }} 
             className="content-wrap"
+            style={{ flex: 1, overflowY: 'auto' }}
           >
             {active === 'Dashboard' && (
               <Dashboard 
@@ -722,6 +723,7 @@ export default function Page() {
                 duration={examDuration}
                 answeredCount={answeredCount}
                 userProfile={userProfile}
+                examActive={examActive}
               />
             )}
             
@@ -1166,9 +1168,9 @@ function Studio({ notify, setModal, loading, error, totalPages, zoom, pagesData,
           <small>Compatible with Allen, Resonance, FIITJEE & NTA PDFs</small>
         </div>
       ) : (
-        <div className="studio-layout">
-          <div className="pdf-canvas">
-            <div className="page-ruler mono">{totalPages} <span>•</span> PDF loaded</div>
+        <div className="studio-layout" style={{ height: 'calc(100vh - 200px)', minHeight: '400px', overflow: 'hidden' }}>
+          <div className="pdf-canvas" style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden' }}>
+            <div className="page-ruler mono" style={{ position: 'sticky', top: 0, zIndex: 10, background: 'rgba(9,9,11,0.9)', padding: '4px 0', marginBottom: '10px' }}>{totalPages} <span>•</span> PDF loaded</div>
             <div className="pdf-pages-container">
               {pagesData.map((pageData: any) => (
                 <PDFPage 
@@ -1181,12 +1183,12 @@ function Studio({ notify, setModal, loading, error, totalPages, zoom, pagesData,
             </div>
           </div>
 
-          <div className="crop-rail">
-            <div className="crop-rail-head">
+          <div className="crop-rail" style={{ position: 'sticky', top: '4px', height: '100%', overflow: 'hidden' }}>
+            <div className="crop-rail-head" style={{ position: 'sticky', top: 0, zIndex: 10 }}>
               <b>Live Cropped Queue</b>
               <span className="cyber-badge">{questions.length} ITEMS</span>
             </div>
-            <div className="crop-rail-list">
+            <div className="crop-rail-list" style={{ overflowY: 'auto' }}>
               {questions.length === 0 ? (
                 <div className="empty-state">
                   <div className="empty-icon">✂</div>
@@ -1273,7 +1275,7 @@ function SavedTests({ notify, draftTests, onLoadDraft, onDeleteDraft }: any) {
 }
 
 // Exam Arena Component
-function ExamArena({ examData, currentIndex, onQuestionSelect, onTypeChange, onAnswerChange, onSaveAndNext, onMarkForReview, onClearResponse, onSubmit, onTimeUp, duration, answeredCount, userProfile }: any) {
+function ExamArena({ examData, currentIndex, onQuestionSelect, onTypeChange, onAnswerChange, onSaveAndNext, onMarkForReview, onClearResponse, onSubmit, onTimeUp, duration, answeredCount, userProfile, examActive }: any) {
   const currentQuestion = examData[currentIndex]
 
   if (!currentQuestion) return null
@@ -1347,7 +1349,7 @@ function ExamArena({ examData, currentIndex, onQuestionSelect, onTypeChange, onA
         </section>
 
         <div className="exam-dock">
-          <ExamTimer initialMinutes={duration} onTimeUp={onTimeUp} />
+          <ExamTimer initialMinutes={duration} onTimeUp={onTimeUp} isActive={examActive} />
           
           <div className="palette-legend">
             <div className="leg-item"><span className="leg-badge ans">✓</span> Answered</div>

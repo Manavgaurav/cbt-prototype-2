@@ -1,29 +1,36 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Clock3 } from 'lucide-react'
 
 interface ExamTimerProps {
   initialMinutes: number
   onTimeUp: () => void
+  isActive?: boolean
   className?: string
 }
 
-export function ExamTimer({ initialMinutes, onTimeUp, className = '' }: ExamTimerProps) {
+export function ExamTimer({ initialMinutes, onTimeUp, isActive = true, className = '' }: ExamTimerProps) {
   const [timeLeft, setTimeLeft] = useState(initialMinutes * 60)
-  const [isRunning, setIsRunning] = useState(false)
+  const intervalRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
-    setIsRunning(true)
-  }, [])
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
 
-  useEffect(() => {
-    if (!isRunning) return
+    // Only start interval if active
+    if (!isActive) return
 
-    const interval = setInterval(() => {
+    intervalRef.current = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
-          clearInterval(interval)
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current)
+            intervalRef.current = null
+          }
           onTimeUp()
           return 0
         }
@@ -31,8 +38,13 @@ export function ExamTimer({ initialMinutes, onTimeUp, className = '' }: ExamTime
       })
     }, 1000)
 
-    return () => clearInterval(interval)
-  }, [isRunning, onTimeUp])
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+  }, [isActive, onTimeUp])
 
   const formatTime = (seconds: number): string => {
     const h = Math.floor(seconds / 3600)
