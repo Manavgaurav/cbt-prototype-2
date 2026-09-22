@@ -26,17 +26,27 @@ export function QuestionPalette({ questions, currentIndex, onQuestionSelect, ans
     } else if (q.markedReview) {
       baseClass += ' marked-review'
     } else if (q.visited) {
-      baseClass += ' not-answered'
+      baseClass += ' visited'
     }
     
     return baseClass
   }
 
+  const completionPercentage = Math.round((answeredCount / questions.length) * 100)
+
   return (
     <div className="palette-wrap">
       <div className="palette-header-row">
         <div className="hud-title">QUESTION PALETTE</div>
-        <span className="palette-summary">{answeredCount}/{questions.length} Ans</span>
+        <span className="palette-summary mono">{answeredCount}/{questions.length} Ans</span>
+      </div>
+      
+      <div className="progress-label">
+        <span>EXAM PROGRESS</span>
+        <span className="mono">{completionPercentage}%</span>
+      </div>
+      <div className="progress-meter">
+        <div className="progress-fill" style={{ width: `${completionPercentage}%` }} />
       </div>
       
       <div className="grid-matrix">

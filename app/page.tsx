@@ -8,7 +8,7 @@ import {
   ChevronLeft, ChevronRight, CircleHelp, Clock3, Command, Database, Download,
   FileArchive, FileText, Flame, FolderOpen, Gauge, GraduationCap, Grid2X2,
   HelpCircle, History, LayoutDashboard, ListChecks, Menu, MoreHorizontal, PanelLeft,
-  Pencil, Play, Plus, RotateCcw, Search, Settings2, Sparkles, Target, Trash2,
+  Pencil, Play, Plus, RotateCcw, Search, Settings2, Target, Trash2,
   UploadCloud, UserRound, X, Zap, ZoomIn, ZoomOut, Save as SaveIcon, Star, Flag
 } from 'lucide-react'
 
@@ -60,6 +60,7 @@ export default function Page() {
   const [clock, setClock] = useState(new Date())
   const [showProfile, setShowProfile] = useState(false)
   const [modal, setModal] = useState<string | null>(null)
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{ type: 'draft' | 'question' | 'test', id: string, onConfirm: () => void } | null>(null)
 
   // User Profile State
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
@@ -164,11 +165,17 @@ export default function Page() {
   }
 
   const deleteQuestion = (index: number) => {
-    setQuestions(prev => {
-      const updated = prev.filter((_, i) => i !== index)
-      return updated.map((q, i) => ({ ...q, id: i + 1 }))
+    setDeleteConfirmation({
+      type: 'question',
+      id: String(index),
+      onConfirm: () => {
+        setQuestions(prev => {
+          const updated = prev.filter((_, i) => i !== index)
+          return updated.map((q, i) => ({ ...q, id: i + 1 }))
+        })
+        notify('Question removed from queue.')
+      }
     })
-    notify('Question removed from queue.')
   }
 
   const clearAllQuestions = () => {
@@ -209,9 +216,15 @@ export default function Page() {
   }
 
   const deleteDraftTest = (draftId: string) => {
-    setDraftTests(prev => prev.filter(d => d.id !== draftId))
-    saveDraftTests(draftTests.filter(d => d.id !== draftId))
-    notify('Draft test removed.')
+    setDeleteConfirmation({
+      type: 'draft',
+      id: draftId,
+      onConfirm: () => {
+        setDraftTests(prev => prev.filter(d => d.id !== draftId))
+        saveDraftTests(draftTests.filter(d => d.id !== draftId))
+        notify('Draft test removed.')
+      }
+    })
   }
 
   // Exam Management
@@ -349,9 +362,15 @@ export default function Page() {
 
   // Test History Management
   const handleDeleteTestRecord = (recordId: string) => {
-    setTestHistory(prev => prev.filter(t => t.id !== recordId))
-    saveTestHistory(testHistory.filter(t => t.id !== recordId))
-    notify('Test record deleted.')
+    setDeleteConfirmation({
+      type: 'test',
+      id: recordId,
+      onConfirm: () => {
+        setTestHistory(prev => prev.filter(t => t.id !== recordId))
+        saveTestHistory(testHistory.filter(t => t.id !== recordId))
+        notify('Test record deleted.')
+      }
+    })
   }
 
   const handleClearAllHistory = () => {
@@ -501,6 +520,40 @@ export default function Page() {
         </div>
       )}
 
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmation && (
+        <div className="modal-overlay" onClick={() => setDeleteConfirmation(null)}>
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.96 }} 
+            animate={{ opacity: 1, scale: 1 }} 
+            className="modal glass" 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <div className="eyebrow">CONFIRM DELETION</div>
+                <h2>Are you sure?</h2>
+              </div>
+              <button className="icon-button" onClick={() => setDeleteConfirmation(null)}><X /></button>
+            </div>
+            <p>Are you sure you want to delete this {deleteConfirmation.type === 'draft' ? 'saved test' : deleteConfirmation.type === 'question' ? 'question' : 'test record'}? This action cannot be undone.</p>
+            <div className="modal-actions">
+              <button className="secondary-button" onClick={() => setDeleteConfirmation(null)}>Cancel</button>
+              <button 
+                className="primary-button" 
+                style={{ background: 'linear-gradient(135deg, #f43f5e, #fb7185)', boxShadow: '0 0 15px rgba(244, 63, 94, 0.4)' }}
+                onClick={() => {
+                  deleteConfirmation.onConfirm()
+                  setDeleteConfirmation(null)
+                }}
+              >
+                <Trash2 /> Delete
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
       <aside className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileNav ? 'mobile-open' : ''}`}>
         <div className="brand">
           <div className="brand-mark"><Zap /></div>
@@ -523,6 +576,7 @@ export default function Page() {
               onClick={() => navTo(label)} 
               className={`nav-item ${active === label ? 'active' : ''}`} 
               title={collapsed ? label : undefined}
+              style={active === label ? { boxShadow: '0 0 15px rgba(139, 92, 246, 0.5)' } : undefined}
             >
               <span className={`nav-icon-box nav-icon-${color}`}>
                 <Icon />
@@ -535,14 +589,6 @@ export default function Page() {
         
         {!collapsed && (
           <div className="sidebar-bottom">
-            <div className="upgrade-card">
-              <div className="upgrade-icon"><Sparkles /></div>
-              <div>
-                <b>Unlock your edge</b>
-                <span>Try advanced analytics</span>
-              </div>
-              <ArrowUpRight />
-            </div>
             <div className="profile-pill" onClick={() => setModal('profile')}>
               <div className="avatar">{userProfile ? getInitials(userProfile.name) : 'CB'}</div>
               <div className="profile-copy">
