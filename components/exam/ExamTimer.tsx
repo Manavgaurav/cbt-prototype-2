@@ -1,5 +1,4 @@
 'use client'
-
 import { useEffect, useState, useRef } from 'react'
 import { Clock3 } from 'lucide-react'
 
@@ -13,6 +12,11 @@ interface ExamTimerProps {
 export function ExamTimer({ initialMinutes, onTimeUp, isActive = true, className = '' }: ExamTimerProps) {
   const [timeLeft, setTimeLeft] = useState(initialMinutes * 60)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Jab bhi initialMinutes change ho, timer ki value reset ho jaye
+  useEffect(() => {
+    setTimeLeft(initialMinutes * 60)
+  }, [initialMinutes])
 
   useEffect(() => {
     // Clear any existing interval
