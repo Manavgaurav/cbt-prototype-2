@@ -12,20 +12,18 @@ interface ExamTimerProps {
 export function ExamTimer({ initialMinutes, onTimeUp, isActive = true, className = '' }: ExamTimerProps) {
   const [timeLeft, setTimeLeft] = useState(initialMinutes * 60)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  
+  // Keep latest onTimeUp in ref to avoid effect re-triggers
+  const onTimeUpRef = useRef(onTimeUp)
+  useEffect(() => {
+    onTimeUpRef.current = onTimeUp
+  }, [onTimeUp])
 
-  // Jab bhi initialMinutes change ho, timer ki value reset ho jaye
   useEffect(() => {
     setTimeLeft(initialMinutes * 60)
   }, [initialMinutes])
 
   useEffect(() => {
-    // Clear any existing interval
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
-      intervalRef.current = null
-    }
-
-    // Only start interval if active
     if (!isActive) return
 
     intervalRef.current = setInterval(() => {
@@ -35,7 +33,7 @@ export function ExamTimer({ initialMinutes, onTimeUp, isActive = true, className
             clearInterval(intervalRef.current)
             intervalRef.current = null
           }
-          onTimeUp()
+          onTimeUpRef.current()
           return 0
         }
         return prev - 1
@@ -48,7 +46,7 @@ export function ExamTimer({ initialMinutes, onTimeUp, isActive = true, className
         intervalRef.current = null
       }
     }
-  }, [isActive, onTimeUp])
+  }, [isActive])
 
   const formatTime = (seconds: number): string => {
     const h = Math.floor(seconds / 3600)
