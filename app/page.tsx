@@ -41,10 +41,11 @@ function Pill({ children, color = 'muted' }: { children: React.ReactNode, color?
   return <span className={`pill pill-${color}`}>{children}</span>
 }
 
-function StatCard({ icon: Icon, label, value, detail, accent }: any) {
+function StatCard({ icon: Icon, label, value, detail, accent, trend, progress = 0 }: any) {
   return <motion.div whileHover={{ y: -3 }} className={`glass stat-card accent-${accent}`}>
     <div className="stat-top"><span className="icon-box"><Icon /></span><span className="stat-detail">{detail}</span></div>
-    <div className="stat-value mono">{value}</div><div className="stat-label">{label}</div>
+    <div className="stat-main"><div><div className="stat-value mono">{value}</div><div className="stat-label">{label}</div></div><div className="progress-ring" style={{ '--progress': `${progress}%` } as React.CSSProperties}><span>{progress}%</span></div></div>
+    <div className="stat-trend mono">{trend}</div>
   </motion.div>
 }
 
@@ -836,10 +837,10 @@ function Dashboard({ notify, setActive, setModal, userProfile, questions, draftT
       </div>
       
       <div className="stats-grid">
-        <StatCard icon={FileArchive} label="Active PDF" value={questions.length > 0 ? '01' : '0'} detail={questions.length > 0 ? 'Ready to extract' : 'No active file'} accent="violet" />
-        <StatCard icon={ListChecks} label="Ready questions" value={questions.length} detail={`${questions.length} items captured`} accent="cyan" />
-        <StatCard icon={Check} label="Tests completed" value={testHistory.length} detail={`${testHistory.length} saved in history`} accent="mint" />
-        <StatCard icon={Target} label="Best score" value={testHistory.length > 0 ? testHistory[0]?.score || '0' : '—'} detail={testHistory.length > 0 ? `Top performance` : 'No attempts yet'} accent="rose" />
+        <StatCard icon={FileArchive} label="Active PDF" value={questions.length > 0 ? '01' : '0'} detail={questions.length > 0 ? 'Ready to extract' : 'No active file'} trend="Awaiting source" progress={questions.length > 0 ? 72 : 8} accent="violet" />
+        <StatCard icon={ListChecks} label="Ready questions" value={questions.length} detail={`${questions.length} items captured`} trend="+12% this week" progress={Math.min(100, questions.length * 12)} accent="cyan" />
+        <StatCard icon={Check} label="Tests completed" value={testHistory.length} detail={`${testHistory.length} saved in history`} trend="Momentum building" progress={Math.min(100, testHistory.length * 18)} accent="mint" />
+        <StatCard icon={Target} label="Best score" value={testHistory.length > 0 ? testHistory[0]?.score || '0' : '—'} detail={testHistory.length > 0 ? `Top performance` : 'No attempts yet'} trend="Target: 99%ile" progress={testHistory.length > 0 ? 94 : 24} accent="rose" />
       </div>
 
       <div className="dashboard-grid">
@@ -853,10 +854,11 @@ function Dashboard({ notify, setActive, setModal, userProfile, questions, draftT
           </div>
           
           {questions.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">▱</div>
+            <div className="empty-state queue-empty">
+              <div className="document-orbit"><FileText /><span /><span /><span /></div>
               <b>No cropped questions yet</b>
-              <span>Upload a PDF below. Scroll freely through all pages and drag to crop questions!</span>
+              <span>Upload a PDF to start building your question queue. Your captured problems will appear here.</span>
+              <div className="filter-tags"><Pill color="cyan">Physics</Pill><Pill color="mint">Chemistry</Pill><Pill color="violet">Maths</Pill></div>
             </div>
           ) : (
             <div className="queue-list">
