@@ -576,7 +576,7 @@ export default function Page() {
               onClick={() => navTo(label)} 
               className={`nav-item ${active === label ? 'active' : ''}`} 
               title={collapsed ? label : undefined}
-              style={active === label ? { boxShadow: '0 0 15px rgba(139, 92, 246, 0.5)' } : undefined}
+              aria-current={active === label ? 'page' : undefined}
             >
               <span className={`nav-icon-box nav-icon-${color}`}>
                 <Icon />
