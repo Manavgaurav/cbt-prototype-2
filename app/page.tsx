@@ -57,7 +57,7 @@ export default function Page() {
   const [active, setActive] = useState('Dashboard')
   const [collapsed, setCollapsed] = useState(false)
   const [mobileNav, setMobileNav] = useState(false)
-  const [clock, setClock] = useState(new Date())
+  const [clock, setClock] = useState<Date | null>(null)
   const [showProfile, setShowProfile] = useState(false)
   const [modal, setModal] = useState<string | null>(null)
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ type: 'draft' | 'question' | 'test', id: string, onConfirm: () => void } | null>(null)
@@ -106,9 +106,10 @@ export default function Page() {
   }, [])
 
   // Clock update
-  useMemo(() => { 
-    const id = setInterval(() => setClock(new Date()), 1000); 
-    return () => clearInterval(id) 
+  useEffect(() => {
+    setClock(new Date())
+    const id = window.setInterval(() => setClock(new Date()), 1000)
+    return () => window.clearInterval(id)
   }, [])
 
   const navTo = (label: string) => { 
@@ -615,8 +616,8 @@ export default function Page() {
           <div className="topbar-right">
             <div className="live-clock">
               <span className="live-dot" />
-              {clock.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })} 
-              <b className="mono">{clock.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</b>
+  {clock ? clock.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' }) : '—'}
+  <b className="mono">{clock ? clock.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}</b>
             </div>
             <button className="icon-button notification"><Bell /><i /></button>
             <button className="candidate-status" onClick={() => setShowProfile(!showProfile)}>
