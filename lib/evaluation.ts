@@ -1,57 +1,93 @@
 'use client'
 import { Question } from './storage'
 
+/**
+ * Universal option normalizer:
+ * Converts "A", "ABC", "A, B, C", "[A, B]", ["A", "B"], etc.
+ * into a clean sorted array: ["A", "B", "C"]
+ */
+export function normalizeOptions(value: any): string[] {
+  if (value === null || value === undefined) return []
+
+  // If already an array, flatten and process each element
+  if (Array.isArray(value)) {
+    return [
+      ...new Set(
+        value
+          .flat(Infinity)
+          .flatMap(v => normalizeOptions(v))
+      )
+    ].sort()
+  }
+
+  // Convert to string and strip enclosing brackets/quotes/spaces
+  let text = String(value)
+    .replace(/[\[\]{}"']/g, '')
+    .trim()
+    .toUpperCase()
+
+  if (!text) return []
+
+  // If pure letter sequence like "ABC" or "AD"
+  if (/^[A-D]{2,}$/.test(text)) {
+    return [...new Set(text.split(''))].sort()
+  }
+
+  // Split by comma, semicolon, pipe, or whitespace
+  const tokens = text
+    .split(/[\s,;|]+/)
+    .map(v => v.trim())
+    .filter(Boolean)
+
+  // Expand any combined tokens like ["A", "BC"] -> ["A", "B", "C"]
+  const finalTokens: string[] = []
+  for (const token of tokens) {
+    if (/^[A-D]{2,}$/.test(token)) {
+      finalTokens.push(...token.split(''))
+    } else {
+      finalTokens.push(token)
+    }
+  }
+
+  return [...new Set(finalTokens)].sort()
+}
+
+/**
+ * Universal attempt check:
+ * Returns true if string, number, or non-empty array is present.
+ */
+export function hasAttempted(choice: any): boolean {
+  if (choice === null || choice === undefined) return false
+  if (Array.isArray(choice)) {
+    return choice.some(v => v !== null && v !== undefined && String(v).trim() !== '')
+  }
+  return String(choice).trim() !== ''
+}
+
 // Universal Answer Key Parser
 export function extractKeyMapFromText(rawText: string): Record<number, string | string[] | number> {
   const keyMap: Record<number, string | string[] | number> = {}
   const source = String(rawText ?? '').replace(/\uFEFF/g, '').trim()
   if (!source) return keyMap
 
-  const normalizeAnswer = (value: any): string | string[] => {
-    if (Array.isArray(value)) {
-      return value
-        .flat(Infinity)
-        .map(v => String(v ?? '').trim().replace(/^["']|["']$/g, '').toUpperCase())
-        .filter(Boolean)
-    }
-    if (value === null || value === undefined) return ''
-    return String(value).trim().replace(/^["']|["']$/g, '')
-  }
-
   const assign = (qNum: string | number, value: any) => {
     const n = Number.parseInt(String(qNum).replace(/[^\d]/g, ''), 10)
     if (!Number.isInteger(n) || n < 1) return
 
-    let answer = normalizeAnswer(value)
-
-    // Multiple-correct answers: A,C / A C / [A,C].
-    if (Array.isArray(answer)) {
-      answer = answer
-        .flatMap(v => String(v).split(/[\s,;|]+/))
-        .map(v => v.trim().toUpperCase())
-        .filter(Boolean)
-      if (answer.length) keyMap[n] = [...new Set(answer)]
+    // If numerical answer
+    const strVal = String(value ?? '').replace(/[\[\]"']/g, '').trim()
+    if (!isNaN(Number(strVal)) && strVal !== '') {
+      keyMap[n] = strVal
       return
     }
 
-    const cleaned = String(answer).replace(/^\[\vert{}\]$/g, '').trim().toUpperCase()
-
-    // Support all common multiple-correct forms:
-    // AD, ABC, A,D, A D, [A,D], ["A","D"].
-    if (/^[A-D]{2,}$/.test(cleaned)) {
-      keyMap[n] = [...new Set(cleaned.split(''))]
-      return
-    }
-
-    const parts = cleaned
-      .split(/[\s,;|]+/)
-      .map(v => v.trim().toUpperCase())
-      .filter(Boolean)
-
-    if (parts.length > 1 && parts.every(v => /^[A-D]$/.test(v))) {
-      keyMap[n] = [...new Set(parts)]
+    const opts = normalizeOptions(value)
+    if (opts.length > 1) {
+      keyMap[n] = opts
+    } else if (opts.length === 1) {
+      keyMap[n] = opts[0]
     } else {
-      keyMap[n] = cleaned
+      keyMap[n] = strVal
     }
   }
 
@@ -86,7 +122,6 @@ export function extractKeyMapFromText(rawText: string): Record<number, string | 
           return
         }
 
-        // Section-wise/nested formats such as Physics: {"1":"A","2":"B"}.
         if (value && typeof value === 'object') {
           walk(value, fallbackIndex)
           return
@@ -97,26 +132,18 @@ export function extractKeyMapFromText(rawText: string): Record<number, string | 
     }
   }
 
-  // 1) Parse the complete input as JSON first. This handles 10/50/90+
-  // question objects without relying on a regex that can stop early.
   try {
     walk(JSON.parse(source))
   } catch (_) {
-    // Continue with the text fallbacks below.
+    // Continue with text fallbacks
   }
 
-  // 2) Extract quoted/unquoted "question number : answer" pairs globally.
-  // This works even when the answer key is pasted as one long line.
   const pairRe = /(?:^|[,{;\n\r])\s*["']?(?:q(?:uestion)?\s*)?(\d+)["']?\s*[:=\-.)]\s*(\[[^\]]*\]|["'][^"']*["']|[A-Za-z0-9.+\-]+(?:\s*(?:,|\/|\s)\s*[A-Za-z0-9.+\-]+)*)/gi
   let match
   while ((match = pairRe.exec(source)) !== null) {
     assign(match[1], match[2])
   }
 
-  // 3) Line-oriented fallback for formats like:
-  // Q1 A
-  // 2. B
-  // 3 -> 4
   const lines = source.split(/\r?\n/)
   for (const line of lines) {
     const m = line.match(/^\s*(?:q(?:uestion)?\s*)?(\d+)\s*(?:[:.)=\-]|->|\s)\s*(.+?)\s*$/i)
@@ -131,138 +158,88 @@ export function extractKeyMapFromText(rawText: string): Record<number, string | 
 export function evaluateQuestionWithKey(q: Question, official: string | string[] | number): void {
   q.officialAnswer = official
 
-  // Do not depend on q.type to decide whether the question was attempted.
-  // A multi-correct question may still have q.type === "single", and a
-  // single selected option can be stored as a string.
-  const hasAttempted =
-    q.choice !== null &&
-    q.choice !== undefined &&
-    (Array.isArray(q.choice)
-      ? q.choice.length > 0
-      : String(q.choice).trim() !== '')
-
-  if (!hasAttempted) {
+  if (!hasAttempted(q.choice)) {
     q.eval = 'skip'
     q.awardedMarks = 0
     return
   }
 
-  // Detect multi-correct from the question type OR from the official key.
+  // Pre-normalize options to check for multi-correct reliably
+  const normalizedOfficial = normalizeOptions(official)
   const isMultiCorrect =
     q.type === 'multi' ||
     Array.isArray(official) ||
+    normalizedOfficial.length > 1 ||
     (typeof official === 'string' && /^[A-D]{2,}$/i.test(official.trim()))
 
-  // 1. NUMERICAL / INTEGER
+  // 1. NUMERICAL / INTEGER EVALUATION
   if (
     q.type === 'integer' ||
-    (!isMultiCorrect && !isNaN(Number(official)) && !Array.isArray(official))
+    q.type === 'numerical' ||
+    (!isMultiCorrect && !isNaN(Number(String(official).trim())) && !Array.isArray(official))
   ) {
     q.type = 'integer'
 
     const userNum = parseFloat(String(q.choice))
     const offNum = parseFloat(String(official))
 
-    if (
-      !isNaN(userNum) &&
-      !isNaN(offNum) &&
-      Math.abs(userNum - offNum) < 0.001
-    ) {
+    if (!isNaN(userNum) && !isNaN(offNum) && Math.abs(userNum - offNum) < 0.001) {
       q.eval = 'correct'
       q.awardedMarks = 4
     } else {
       q.eval = 'wrong'
-      q.awardedMarks = 0
+      q.awardedMarks = 0 // Numerical wrong is 0
     }
-
     return
   }
 
-  // 2. MULTIPLE CORRECT / JEE ADVANCED
+  // 2. MULTIPLE CORRECT / JEE ADVANCED EVALUATION
   if (isMultiCorrect) {
     q.type = 'multi'
 
-    const normalizeChoices = (value: any): string[] => {
-      if (Array.isArray(value)) {
-        return value
-          .flat(Infinity)
-          .map(v => String(v ?? '').trim().toUpperCase())
-          .filter(Boolean)
-          .flatMap(v =>
-            /^[A-D]{2,}$/.test(v)
-              ? v.split('')
-              : v.split(/[\s,;|]+/)
-          )
-          .filter(Boolean)
-      }
+    const userChoices = normalizeOptions(q.choice)
+    const offChoices = normalizedOfficial
 
-      const text = String(value ?? '').trim().toUpperCase()
-
-      if (!text) return []
-
-      if (/^[A-D]{2,}$/.test(text)) {
-        return text.split('')
-      }
-
-      return text
-        .split(/[\s,;|]+/)
-        .map(v => v.trim())
-        .filter(Boolean)
+    if (userChoices.length === 0) {
+      q.eval = 'skip'
+      q.awardedMarks = 0
+      return
     }
 
-    const userChoices = [...new Set(normalizeChoices(q.choice))].sort()
-    const offChoices = [...new Set(normalizeChoices(official))].sort()
+    const correctSelected = userChoices.filter(choice => offChoices.includes(choice))
+    const wrongSelected = userChoices.filter(choice => !offChoices.includes(choice))
 
-    const correctSelected = userChoices.filter(choice =>
-      offChoices.includes(choice)
-    )
-
-    const wrongSelected = userChoices.filter(choice =>
-      !offChoices.includes(choice)
-    )
-
+    // If ANY incorrect option is chosen -> -2
     if (wrongSelected.length > 0) {
       q.eval = 'wrong'
       q.awardedMarks = -2
       return
     }
 
-    if (
-      userChoices.length === offChoices.length &&
-      correctSelected.length === offChoices.length
-    ) {
+    // All correct options chosen -> +4
+    if (userChoices.length === offChoices.length && correctSelected.length === offChoices.length) {
       q.eval = 'correct'
       q.awardedMarks = 4
       return
     }
 
+    // Partial correct (Only correct options selected, no wrong option)
     if (correctSelected.length > 0) {
       q.eval = 'partial'
-
-      if (offChoices.length === 4 && correctSelected.length === 3) {
-        q.awardedMarks = 3
-      } else if (offChoices.length >= 3 && correctSelected.length === 2) {
-        q.awardedMarks = 2
-      } else if (offChoices.length >= 2 && correctSelected.length === 1) {
-        q.awardedMarks = 1
-      } else {
-        q.awardedMarks = correctSelected.length
-      }
-
+      q.awardedMarks = correctSelected.length // +1 for each correct option marked
       return
     }
 
-    // Attempted, but no correct option selected.
     q.eval = 'wrong'
     q.awardedMarks = -2
     return
   }
 
-  // 3. SINGLE CHOICE
-  if (
-    String(q.choice).trim().toUpperCase() ===
-    String(official).trim().toUpperCase()
-  ) {
+  // 3. SINGLE CHOICE EVALUATION
+  const userChoice = normalizeOptions(q.choice)[0] ?? ''
+  const offChoice = normalizedOfficial[0] ?? ''
+
+  if (userChoice && userChoice === offChoice) {
     q.eval = 'correct'
     q.awardedMarks = 4
   } else {
@@ -271,7 +248,10 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
   }
 }
 
-export function calculateTestResults(questions: Question[]) {
+export function calculateTestResults(
+  questions: Question[],
+  keyMap?: Record<string | number, any>
+) {
   let score = 0
   let correct = 0
   let partial = 0
@@ -282,13 +262,24 @@ export function calculateTestResults(questions: Question[]) {
   let negScore = 0
 
   const normalizedQuestions = questions.map((q) => {
-    const safeQ = q && typeof q === 'object' ? q : {}
+    const safeQ = q && typeof q === 'object' ? q : ({} as Question)
+
+    // Re-evaluate if keyMap is provided or question has officialAnswer
+    const activeKey =
+      (keyMap && safeQ.id !== undefined && keyMap[safeQ.id] !== undefined)
+        ? keyMap[safeQ.id]
+        : safeQ.officialAnswer
+
+    if (activeKey !== undefined && activeKey !== null) {
+      evaluateQuestionWithKey(safeQ, activeKey)
+    }
+
     const marksRaw = Number(safeQ.awardedMarks)
     const marks = Number.isFinite(marksRaw) ? marksRaw : 0
     const timeRaw = Number(safeQ.timeSec)
     const timeSec = Number.isFinite(timeRaw) && timeRaw >= 0 ? timeRaw : 0
-    const evalState = ['correct', 'partial', 'wrong', 'skip'].includes(safeQ.eval)
-      ? safeQ.eval
+    const evalState = ['correct', 'partial', 'wrong', 'skip'].includes(safeQ.eval ?? '')
+      ? safeQ.eval!
       : 'skip'
 
     totalTimeSec += timeSec
@@ -319,7 +310,6 @@ export function calculateTestResults(questions: Question[]) {
     }
   })
 
-  // Keep all arithmetic finite even if imported/mutated data contains NaN/Infinity.
   score = Number.isFinite(score) ? score : 0
   totalTimeSec = Number.isFinite(totalTimeSec) ? totalTimeSec : 0
   negScore = Number.isFinite(negScore) ? negScore : 0
