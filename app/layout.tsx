@@ -5,32 +5,19 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'CBT Studio — Exam Operating System',
   description: 'A focused computer-based test workspace for JEE and NEET aspirants.',
-  generator: 'v0.app',
   icons: {
     icon: [
       {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
+        url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="%230b0b14"/><circle cx="16" cy="16" r="10" stroke="%238b5cf6" stroke-width="2.5" fill="none"/><polygon points="13,11 22,16 13,21" fill="%23a78bfa"/></svg>',
         type: 'image/svg+xml',
       },
     ],
-    apple: '/apple-icon.png',
   },
 }
 
 export const viewport: Viewport = {
-  colorScheme: 'light dark',
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: 'white' },
-    { media: '(prefers-color-scheme: dark)', color: 'black' },
-  ],
+  colorScheme: 'dark',
+  themeColor: '#0b0b14',
 }
 
 export default function RootLayout({
