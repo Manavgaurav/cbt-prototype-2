@@ -131,7 +131,8 @@ export function extractKeyMapFromText(rawText: string): Record<number, string | 
 export function evaluateQuestionWithKey(q: Question, official: string | string[] | number): void {
   q.officialAnswer = official
 
-  // Robustly detect multi-correct answers even when q.type is still "single".
+  // A question is multi-correct if its type says so, the key is an array,
+  // or the key is a compact string such as "ABC" / "AD".
   const isMultiCorrect =
     q.type === 'multi' ||
     Array.isArray(official) ||
@@ -140,8 +141,8 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
   const hasAttempted = isMultiCorrect
     ? (Array.isArray(q.choice)
         ? q.choice.length > 0
-        : (q.choice !== null && String(q.choice).trim() !== ''))
-    : (q.choice !== null && String(q.choice).trim() !== '')
+        : (q.choice !== null && q.choice !== undefined && String(q.choice).trim() !== ''))
+    : (q.choice !== null && q.choice !== undefined && String(q.choice).trim() !== '')
 
   if (!hasAttempted) {
     q.eval = 'skip'
@@ -149,11 +150,13 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
     return
   }
 
-  // 1. NUMERICAL TYPE EVALUATION
+  // 1. NUMERICAL / INTEGER EVALUATION
+  // Keep the existing +4 / 0 behaviour.
   if (q.type === 'integer' || (!isMultiCorrect && !isNaN(Number(official)) && !Array.isArray(official))) {
     q.type = 'integer'
     const userNum = parseFloat(String(q.choice))
     const offNum = parseFloat(String(official))
+
     if (!isNaN(userNum) && !isNaN(offNum) && Math.abs(userNum - offNum) < 0.001) {
       q.eval = 'correct'
       q.awardedMarks = 4
@@ -164,7 +167,7 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
     return
   }
 
-  // 2. MULTIPLE CORRECT EVALUATION (JEE ADVANCED PATTERN)
+  // 2. MULTIPLE-CORRECT EVALUATION (JEE ADVANCED)
   if (isMultiCorrect) {
     q.type = 'multi'
 
@@ -180,30 +183,40 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
 
       const text = String(value ?? '').trim().toUpperCase()
       if (!text) return []
+
+      // "ABC" -> ["A", "B", "C"], "AD" -> ["A", "D"]
       if (/^[A-D]{2,}$/.test(text)) return text.split('')
+
       return text.split(/[\s,;|]+/).filter(Boolean)
     }
 
     const userChoices = [...new Set(normalizeChoices(q.choice))].sort()
     const offChoices = [...new Set(normalizeChoices(official))].sort()
 
-    const correctSelected = userChoices.filter(c => offChoices.includes(c))
-    const wrongSelected = userChoices.filter(c => !offChoices.includes(c))
+    const correctSelected = userChoices.filter(choice => offChoices.includes(choice))
+    const wrongSelected = userChoices.filter(choice => !offChoices.includes(choice))
 
+    // Any incorrect option selected => wrong / -2.
     if (wrongSelected.length > 0) {
-      // Kisi bhi galat option ko choose karne par negative marking.
       q.eval = 'wrong'
       q.awardedMarks = -2
-    } else if (
+      return
+    }
+
+    // All official options selected and no extra option => full marks.
+    if (
       correctSelected.length === offChoices.length &&
       userChoices.length === offChoices.length
     ) {
-      // Saare correct options choose karne par full marks.
       q.eval = 'correct'
       q.awardedMarks = 4
-    } else if (correctSelected.length > 0) {
-      // JEE Advanced partial marking.
+      return
+    }
+
+    // Correct subset only => partial marks.
+    if (correctSelected.length > 0) {
       q.eval = 'partial'
+
       if (offChoices.length === 4 && correctSelected.length === 3) {
         q.awardedMarks = 3
       } else if (offChoices.length >= 3 && correctSelected.length === 2) {
@@ -213,14 +226,16 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
       } else {
         q.awardedMarks = correctSelected.length
       }
-    } else {
-      q.eval = 'skip'
-      q.awardedMarks = 0
+      return
     }
+
+    q.eval = 'skip'
+    q.awardedMarks = 0
     return
   }
 
   // 3. SINGLE CHOICE EVALUATION
+  // Keep the existing +4 / -1 behaviour.
   if (String(q.choice).toUpperCase() === String(official).toUpperCase()) {
     q.eval = 'correct'
     q.awardedMarks = 4
