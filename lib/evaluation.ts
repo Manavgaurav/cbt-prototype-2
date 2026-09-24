@@ -191,18 +191,18 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
     const wrongSelected = userChoices.filter(c => !offChoices.includes(c))
 
     if (wrongSelected.length > 0) {
-      // Kisi bhi galat option ko choose karne par negative marking
+      // Kisi bhi galat option ko choose karne par negative marking.
       q.eval = 'wrong'
       q.awardedMarks = -2
     } else if (
       correctSelected.length === offChoices.length &&
       userChoices.length === offChoices.length
     ) {
-      // Saare correct options choose karne par full marks
+      // Saare correct options choose karne par full marks.
       q.eval = 'correct'
       q.awardedMarks = 4
     } else if (correctSelected.length > 0) {
-      // JEE Advanced Partial Marking Logic:
+      // JEE Advanced partial marking.
       q.eval = 'partial'
       if (offChoices.length === 4 && correctSelected.length === 3) {
         q.awardedMarks = 3
