@@ -131,8 +131,16 @@ export function extractKeyMapFromText(rawText: string): Record<number, string | 
 export function evaluateQuestionWithKey(q: Question, official: string | string[] | number): void {
   q.officialAnswer = official
 
-  const hasAttempted = (q.type === 'multi') 
-    ? (Array.isArray(q.choice) && q.choice.length > 0)
+  // Robustly detect multi-correct answers even when q.type is still "single".
+  const isMultiCorrect =
+    q.type === 'multi' ||
+    Array.isArray(official) ||
+    (typeof official === 'string' && /^[A-D]{2,}$/i.test(official.trim()))
+
+  const hasAttempted = isMultiCorrect
+    ? (Array.isArray(q.choice)
+        ? q.choice.length > 0
+        : (q.choice !== null && String(q.choice).trim() !== ''))
     : (q.choice !== null && String(q.choice).trim() !== '')
 
   if (!hasAttempted) {
@@ -142,7 +150,7 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
   }
 
   // 1. NUMERICAL TYPE EVALUATION
-  if (q.type === 'integer' || (!isNaN(Number(official)) && !Array.isArray(official))) {
+  if (q.type === 'integer' || (!isMultiCorrect && !isNaN(Number(official)) && !Array.isArray(official))) {
     q.type = 'integer'
     const userNum = parseFloat(String(q.choice))
     const offNum = parseFloat(String(official))
@@ -157,8 +165,9 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
   }
 
   // 2. MULTIPLE CORRECT EVALUATION (JEE ADVANCED PATTERN)
-  if (Array.isArray(official) || q.type === 'multi') {
+  if (isMultiCorrect) {
     q.type = 'multi'
+
     const normalizeChoices = (value: any): string[] => {
       if (Array.isArray(value)) {
         return value
@@ -185,7 +194,10 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
       // Kisi bhi galat option ko choose karne par negative marking
       q.eval = 'wrong'
       q.awardedMarks = -2
-    } else if (correctSelected.length === offChoices.length) {
+    } else if (
+      correctSelected.length === offChoices.length &&
+      userChoices.length === offChoices.length
+    ) {
       // Saare correct options choose karne par full marks
       q.eval = 'correct'
       q.awardedMarks = 4
