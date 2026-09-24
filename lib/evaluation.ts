@@ -246,6 +246,21 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
 }
 
 export function calculateTestResults(questions: Question[]) {
+  // Re-evaluate questions that already have an official answer attached.
+  // This prevents a stale "skip" state from surviving final result calculation.
+  questions.forEach((q) => {
+    if (
+      q &&
+      q.officialAnswer !== null &&
+      q.officialAnswer !== undefined &&
+      q.choice !== null &&
+      q.choice !== undefined &&
+      String(q.choice).trim() !== ''
+    ) {
+      evaluateQuestionWithKey(q, q.officialAnswer)
+    }
+  })
+
   let score = 0
   let correct = 0
   let partial = 0
