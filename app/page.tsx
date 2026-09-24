@@ -1,5 +1,4 @@
 'use client'
-
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Toaster, toast } from 'sonner'
@@ -9,12 +8,12 @@ import {
   FileArchive, FileText, Flame, FolderOpen, Gauge, GraduationCap, Grid2X2,
   HelpCircle, History, LayoutDashboard, ListChecks, Menu, MoreHorizontal, PanelLeft,
   Pencil, Play, Plus, RotateCcw, Search, Settings2, Target, Trash2,
-  UploadCloud, UserRound, X, Zap, ZoomIn, ZoomOut, Save as SaveIcon, Star, Flag
+  UploadCloud, UserRound, X, Zap, ZoomIn, ZoomOut, Save as SaveIcon, Star, Flag, Atom
 } from 'lucide-react'
 
 // Import our custom utilities and components
 import { 
-  UserProfile, Question, DraftTest, TestRecord, 
+  UserProfile, Question, DraftTest, TestRecord, Subject,
   getUserProfile, saveUserProfile, getTestHistory, saveTestHistory, 
   getDraftTests, saveDraftTests, clearDraftTests, getInitials, formatDate, generateId 
 } from '@/lib/storage'
@@ -48,10 +47,6 @@ function StatCard({ icon: Icon, label, value, detail, accent }: any) {
   </motion.div>
 }
 
-function Thumbnail({ tone = 'violet', label = 'QUESTION' }: { tone?: string, label?: string }) {
-  return <div className={`thumb thumb-${tone}`}><div className="thumb-lines"><span /><span /><span /></div><b>{label}</b><div className="thumb-equation mono">∫ ∑ Δ</div></div>
-}
-
 export default function Page() {
   // UI State
   const [active, setActive] = useState('Dashboard')
@@ -65,6 +60,10 @@ export default function Page() {
   // User Profile State
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
+
+  // Subject Management State
+  const [activeCropSubject, setActiveCropSubject] = useState<Subject>('physics')
+  const [activeExamSubject, setActiveExamSubject] = useState<Subject>('physics')
 
   // PDF and Question State
   const { pdfDoc, loading, error, totalPages, zoom, pagesData, loadPDF, setZoom, resetZoom, clearPDF } = usePDF()
@@ -157,11 +156,12 @@ export default function Page() {
       timeSec: 0,
       eval: 'unattempted',
       awardedMarks: 0,
-      officialAnswer: null
+      officialAnswer: null,
+      subject: activeCropSubject
     }
     
     setQuestions(prev => [...prev, newQuestion])
-    notify(`Question #${newQuestion.id} captured from Page ${pageNum}!`)
+    notify(`Q#${newQuestion.id} captured into [${activeCropSubject.toUpperCase()}]!`)
   }
 
   const deleteQuestion = (index: number) => {
@@ -211,7 +211,7 @@ export default function Page() {
       setCurrentFileName(draft.title)
       setExamDuration(draft.durationMins)
       notify(`Loaded "${draft.title}". Launching examination...`)
-      launchExam()
+      launchExam(draft.questions)
     }
   }
 
@@ -228,13 +228,14 @@ export default function Page() {
   }
 
   // Exam Management
-  const launchExam = () => {
-    if (questions.length === 0) {
+  const launchExam = (customQuestions?: Question[]) => {
+    const sourceQuestions = customQuestions || questions
+    if (sourceQuestions.length === 0) {
       notify('Please add at least one question!')
       return
     }
 
-    const examQuestions: Question[] = questions.map((q, i) => ({
+    const examQuestions: Question[] = sourceQuestions.map((q, i) => ({
       ...q,
       id: i + 1,
       visited: i === 0,
@@ -242,11 +243,13 @@ export default function Page() {
       timeSec: 0,
       eval: 'unattempted',
       awardedMarks: 0,
-      officialAnswer: null
+      officialAnswer: null,
+      subject: q.subject || 'physics'
     }))
 
     setExamData(examQuestions)
     setCurrentQuestionIndex(0)
+    setActiveExamSubject(examQuestions[0]?.subject || 'physics')
     setExamActive(true)
     setActive('Start Exam')
     notify('Examination started!')
@@ -277,11 +280,18 @@ export default function Page() {
 
   const handleQuestionNavigation = (index: number) => {
     setCurrentQuestionIndex(index)
+    if (examData[index]?.subject) {
+      setActiveExamSubject(examData[index].subject as Subject)
+    }
   }
 
   const handleSaveAndNext = () => {
     if (currentQuestionIndex < examData.length - 1) {
-      setCurrentQuestionIndex(prev => prev + 1)
+      const nextIdx = currentQuestionIndex + 1
+      setCurrentQuestionIndex(nextIdx)
+      if (examData[nextIdx]?.subject) {
+        setActiveExamSubject(examData[nextIdx].subject as Subject)
+      }
     } else {
       notify('You are on the last question.')
     }
@@ -297,7 +307,11 @@ export default function Page() {
       return updated
     })
     if (currentQuestionIndex < examData.length - 1) {
-      setCurrentQuestionIndex(prev => prev + 1)
+      const nextIdx = currentQuestionIndex + 1
+      setCurrentQuestionIndex(nextIdx)
+      if (examData[nextIdx]?.subject) {
+        setActiveExamSubject(examData[nextIdx].subject as Subject)
+      }
     }
   }
 
@@ -387,7 +401,6 @@ export default function Page() {
     }
   }
 
-  // Calculate answered count for palette
   const answeredCount = examData.filter(q => {
     if (q.type === 'multi') return Array.isArray(q.choice) && q.choice.length > 0
     return q.choice !== null && String(q.choice).trim() !== ''
@@ -473,18 +486,18 @@ export default function Page() {
             
             <label>Test Title *</label>
             <input 
-              value={draftTitle}
-              onChange={(e) => setDraftTitle(e.target.value)}
+              value={draftTitle} 
+              onChange={(e) => setDraftTitle(e.target.value)} 
               placeholder="e.g. Thermodynamics Allen Test 03" 
             />
             
             <label>Recommended Time (Minutes)</label>
             <input 
-              type="number"
-              value={draftDuration}
-              onChange={(e) => setDraftDuration(Number(e.target.value))}
+              type="number" 
+              value={draftDuration} 
+              onChange={(e) => setDraftDuration(Number(e.target.value))} 
               min="5" 
-              max="300"
+              max="300" 
             />
             
             <div className="modal-actions">
@@ -513,8 +526,8 @@ export default function Page() {
             </div>
             <AnswerKeyImport 
               questions={examData} 
-              onEvaluationComplete={handleEvaluationComplete}
-              onClose={() => setShowAnswerKeyImport(false)}
+              onEvaluationComplete={handleEvaluationComplete} 
+              onClose={() => setShowAnswerKeyImport(false)} 
             />
           </motion.div>
         </div>
@@ -656,10 +669,11 @@ export default function Page() {
                 onLoadDraft={loadDraftTest}
                 onDeleteDraft={deleteDraftTest}
                 onViewScorecard={handleViewScorecard}
+                onLaunchExam={launchExam}
               />
             )}
             
-            {active === 'Upload & Extract' && (
+            {(active === 'Upload & Extract' || active === 'Question Queue') && (
               <Studio 
                 notify={notify} 
                 setModal={setModal}
@@ -676,26 +690,9 @@ export default function Page() {
                 onDeleteQuestion={deleteQuestion}
                 onClearQuestions={clearAllQuestions}
                 currentFileName={currentFileName}
-              />
-            )}
-            
-            {active === 'Question Queue' && (
-              <Studio 
-                notify={notify} 
-                setModal={setModal}
-                loading={loading}
-                error={error}
-                totalPages={totalPages}
-                zoom={zoom}
-                pagesData={pagesData}
-                onPDFUpload={handlePDFUpload}
-                onZoomChange={setZoom}
-                onResetZoom={resetZoom}
-                onCropComplete={handleCropComplete}
-                questions={questions}
-                onDeleteQuestion={deleteQuestion}
-                onClearQuestions={clearAllQuestions}
-                currentFileName={currentFileName}
+                activeSubject={activeCropSubject}
+                onSubjectChange={setActiveCropSubject}
+                onLaunchExam={launchExam}
               />
             )}
             
@@ -724,6 +721,14 @@ export default function Page() {
                 answeredCount={answeredCount}
                 userProfile={userProfile}
                 examActive={examActive}
+                activeSubject={activeExamSubject}
+                onSubjectChange={(subj: Subject) => {
+                  setActiveExamSubject(subj)
+                  const firstIdxOfSub = examData.findIndex(q => (q.subject || 'physics') === subj)
+                  if (firstIdxOfSub !== -1) {
+                    setCurrentQuestionIndex(firstIdxOfSub)
+                  }
+                }}
               />
             )}
             
@@ -798,9 +803,10 @@ export default function Page() {
             <label>Candidate name</label>
             <input defaultValue={userProfile?.name || ''} id="profile-name" />
             <label>Target exam</label>
-            <select defaultValue={userProfile?.target || 'JEE Advanced 2025'} id="profile-target">
-              <option>JEE Advanced 2025</option>
-              <option>NEET 2025</option>
+            <select defaultValue={userProfile?.target || 'JEE Advanced 2026'} id="profile-target">
+              <option>JEE Advanced 2026</option>
+              <option>JEE Main 2026</option>
+              <option>NEET-UG</option>
             </select>
             <button 
               className="primary-button full" 
@@ -820,7 +826,7 @@ export default function Page() {
 }
 
 // Dashboard Component
-function Dashboard({ notify, setActive, setModal, userProfile, questions, draftTests, testHistory, onLoadDraft, onDeleteDraft, onViewScorecard }: any) {
+function Dashboard({ notify, setActive, setModal, userProfile, questions, draftTests, testHistory, onLoadDraft, onDeleteDraft, onViewScorecard, onLaunchExam }: any) {
   return (
     <>
       <div className="page-heading">
@@ -831,7 +837,11 @@ function Dashboard({ notify, setActive, setModal, userProfile, questions, draftT
         </div>
         <div className="heading-actions">
           <button className="secondary-button" onClick={() => notify('Opening your activity log')}><Activity /> Activity</button>
-          <button className="primary-button" onClick={() => setActive('Upload & Extract')}><Plus /> New test</button>
+          {questions.length > 0 ? (
+            <button className="primary-button" onClick={() => onLaunchExam()}><Play /> Start Exam ({questions.length})</button>
+          ) : (
+            <button className="primary-button" onClick={() => setActive('Upload & Extract')}><Plus /> New test</button>
+          )}
         </div>
       </div>
       
@@ -864,8 +874,8 @@ function Dashboard({ notify, setActive, setModal, userProfile, questions, draftT
                 <div className="queue-item" key={q.id}>
                   <img src={q.img} className="queue-thumb" alt={`Q${q.id}`} />
                   <div className="queue-copy">
-                    <b>Q{q.id < 10 ? '0' : ''}{q.id} // CROPPED</b>
-                    <span><Pill>Page {q.page}</Pill> Question <span className="mono">• Captured</span></span>
+                    <b>Q{q.id < 10 ? '0' : ''}{q.id} // {(q.subject || 'physics').toUpperCase()}</b>
+                    <span><Pill>Page {q.page}</Pill> <span className="mono">• Captured</span></span>
                   </div>
                   <button className="icon-button subtle" onClick={() => notify('Question removed from queue')}><Trash2 /></button>
                 </div>
@@ -963,7 +973,6 @@ function Dashboard({ notify, setActive, setModal, userProfile, questions, draftT
   )
 }
 
-// Individual PDF page component with crop functionality
 function PDFPage({ pageData, totalPages, onCrop }: { pageData: any, totalPages: number, onCrop: (dataUrl: string, pageNum: number) => void }) {
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null)
   const cropCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -1085,25 +1094,30 @@ function PDFPage({ pageData, totalPages, onCrop }: { pageData: any, totalPages: 
     <div className="pdf-page-wrapper">
       <div className="page-watermark">PAGE {pageData.pageNum} / {totalPages}</div>
       <canvas 
-        ref={pdfCanvasRef}
-        className="pdf-canvas-element"
-        style={{ opacity: canvasReady ? 1 : 0.5 }}
+        ref={pdfCanvasRef} 
+        className="pdf-canvas-element" 
+        style={{ opacity: canvasReady ? 1 : 0.5 }} 
       />
       <canvas 
-        ref={cropCanvasRef}
-        className="pdf-crop-canvas"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
+        ref={cropCanvasRef} 
+        className="pdf-crop-canvas" 
+        onMouseDown={handleMouseDown} 
+        onMouseMove={handleMouseMove} 
+        onMouseUp={handleMouseUp} 
+        onMouseLeave={handleMouseLeave} 
       />
     </div>
   )
 }
 
-// Studio Component (PDF Upload & Crop)
-function Studio({ notify, setModal, loading, error, totalPages, zoom, pagesData, onPDFUpload, onZoomChange, onResetZoom, onCropComplete, questions, onDeleteQuestion, onClearQuestions, currentFileName }: any) {
+// Studio Component (PDF Upload & Crop with Subject Tabs)
+function Studio({ 
+  notify, setModal, loading, error, totalPages, zoom, pagesData, 
+  onPDFUpload, onZoomChange, onResetZoom, onCropComplete, questions, 
+  onDeleteQuestion, onClearQuestions, currentFileName, activeSubject, onSubjectChange, onLaunchExam 
+}: any) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [filterSubject, setFilterSubject] = useState<'all' | Subject>('all')
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -1120,6 +1134,10 @@ function Studio({ notify, setModal, loading, error, totalPages, zoom, pagesData,
     }
   }
 
+  const filteredQuestions = filterSubject === 'all' 
+    ? questions 
+    : questions.filter((q: Question) => (q.subject || 'physics') === filterSubject)
+
   return (
     <>
       <div className="page-heading">
@@ -1130,7 +1148,42 @@ function Studio({ notify, setModal, loading, error, totalPages, zoom, pagesData,
         </div>
         <div className="heading-actions">
           <button className="secondary-button" onClick={onClearQuestions}><RotateCcw /> Clear queue</button>
-          <button className="primary-button" onClick={() => setModal('save-draft')}><SaveIcon /> Save draft</button>
+          <button className="secondary-button" onClick={() => setModal('save-draft')}><SaveIcon /> Save draft</button>
+          {questions.length > 0 && (
+            <button className="primary-button" onClick={() => onLaunchExam()}><Play /> Launch Exam ({questions.length})</button>
+          )}
+        </div>
+      </div>
+
+      {/* Top Subject Selector for Ingestion */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', background: 'rgba(18, 18, 30, 0.7)', border: '1px solid rgba(139, 92, 246, 0.25)', borderRadius: '14px', padding: '8px 16px', backdropFilter: 'blur(10px)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.08em', color: '#a78bfa', textTransform: 'uppercase' }}>Active Crop Section:</span>
+          {(['physics', 'chemistry', 'maths'] as Subject[]).map((subj) => (
+            <button
+              key={subj}
+              onClick={() => onSubjectChange(subj)}
+              style={{
+                padding: '6px 16px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                border: activeSubject === subj ? '1px solid #8b5cf6' : '1px solid rgba(255,255,255,0.08)',
+                background: activeSubject === subj ? 'linear-gradient(135deg, #7c3aed, #6d28d9)' : 'rgba(255,255,255,0.03)',
+                color: activeSubject === subj ? '#ffffff' : '#94a3b8',
+                boxShadow: activeSubject === subj ? '0 0 12px rgba(124, 58, 237, 0.4)' : 'none'
+              }}
+            >
+              {subj}
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize: '11px', color: '#64748b' }}>
+          Questions cropped now will be tagged as <b style={{ color: '#c084fc', textTransform: 'uppercase' }}>{activeSubject}</b>
         </div>
       </div>
 
@@ -1159,16 +1212,16 @@ function Studio({ notify, setModal, loading, error, totalPages, zoom, pagesData,
           <p>Drag & drop your question paper PDF here or click to browse from device</p>
           <button className="primary-button">Browse PDF File</button>
           <input 
-            ref={fileInputRef}
+            ref={fileInputRef} 
             type="file" 
             accept="application/pdf" 
-            style={{ display: 'none' }}
-            onChange={handleFileUpload}
+            style={{ display: 'none' }} 
+            onChange={handleFileUpload} 
           />
           <small>Compatible with Allen, Resonance, FIITJEE & NTA PDFs</small>
         </div>
       ) : (
-        <div className="studio-layout" style={{ height: 'calc(100vh - 200px)', minHeight: '400px', overflow: 'hidden' }}>
+        <div className="studio-layout" style={{ height: 'calc(100vh - 250px)', minHeight: '400px', overflow: 'hidden' }}>
           <div className="pdf-canvas" style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden' }}>
             <div className="page-ruler mono" style={{ position: 'sticky', top: 0, zIndex: 10, background: 'rgba(9,9,11,0.9)', padding: '4px 0', marginBottom: '10px' }}>{totalPages} <span>•</span> PDF loaded</div>
             <div className="pdf-pages-container">
@@ -1176,40 +1229,65 @@ function Studio({ notify, setModal, loading, error, totalPages, zoom, pagesData,
                 <PDFPage 
                   key={pageData.pageNum} 
                   pageData={pageData} 
-                  totalPages={totalPages}
-                  onCrop={onCropComplete}
+                  totalPages={totalPages} 
+                  onCrop={onCropComplete} 
                 />
               ))}
             </div>
           </div>
 
-          <div className="crop-rail" style={{ position: 'sticky', top: '4px', height: '100%', overflow: 'hidden' }}>
+          <div className="crop-rail" style={{ position: 'sticky', top: '4px', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <div className="crop-rail-head" style={{ position: 'sticky', top: 0, zIndex: 10 }}>
               <b>Live Cropped Queue</b>
               <span className="cyber-badge">{questions.length} ITEMS</span>
             </div>
-            <div className="crop-rail-list" style={{ overflowY: 'auto' }}>
-              {questions.length === 0 ? (
+
+            {/* Filter buttons in Queue */}
+            <div style={{ display: 'flex', gap: '4px', padding: '8px 12px', background: 'rgba(10, 10, 18, 0.8)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              {(['all', 'physics', 'chemistry', 'maths'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setFilterSubject(tab)}
+                  style={{
+                    flex: 1,
+                    fontSize: '10px',
+                    padding: '4px 0',
+                    borderRadius: '6px',
+                    textTransform: 'uppercase',
+                    fontWeight: 700,
+                    border: filterSubject === tab ? '1px solid #a855f7' : '1px solid transparent',
+                    background: filterSubject === tab ? 'rgba(168, 85, 247, 0.2)' : 'transparent',
+                    color: filterSubject === tab ? '#e9d5ff' : '#64748b',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {tab === 'all' ? 'All' : tab.slice(0, 4)}
+                </button>
+              ))}
+            </div>
+
+            <div className="crop-rail-list" style={{ overflowY: 'auto', flex: 1 }}>
+              {filteredQuestions.length === 0 ? (
                 <div className="empty-state">
                   <div className="empty-icon">✂</div>
-                  <b>Instant Crop Active</b>
-                  <span>Drag any box on the PDF. It captures immediately with zero popups!</span>
+                  <b>No questions here</b>
+                  <span>Drag box on PDF to capture for {activeSubject.toUpperCase()}.</span>
                 </div>
               ) : (
-                questions.map((q: Question, index: number) => (
+                filteredQuestions.map((q: Question, index: number) => (
                   <div key={q.id} className="rail-crop-card">
                     <div className="rail-crop-head">
-                      <span className="rail-crop-title">QUESTION #{q.id < 10 ? '0' : ''}{q.id}</span>
+                      <span className="rail-crop-title">Q#{q.id < 10 ? '0' : ''}{q.id} • {(q.subject || 'physics').toUpperCase()}</span>
                       <span className="rail-crop-page">Page {q.page}</span>
                     </div>
                     <div className="rail-crop-img-wrap">
                       <img src={q.img} alt={`Q${q.id}`} />
                     </div>
                     <div className="rail-crop-actions">
-                      <button className="icon-button subtle" onClick={() => notify('Inspect question')}>
+                      <button className="icon-button subtle" onClick={() => notify(`Question #${q.id} (${q.subject || 'physics'})`)}>
                         <ZoomIn />
                       </button>
-                      <button className="icon-button subtle" onClick={() => onDeleteQuestion(index)}>
+                      <button className="icon-button subtle" onClick={() => onDeleteQuestion(questions.findIndex((item: Question) => item.id === q.id))}>
                         <Trash2 />
                       </button>
                     </div>
@@ -1224,7 +1302,6 @@ function Studio({ notify, setModal, loading, error, totalPages, zoom, pagesData,
   )
 }
 
-// Saved Tests Component
 function SavedTests({ notify, draftTests, onLoadDraft, onDeleteDraft }: any) {
   return (
     <>
@@ -1234,7 +1311,7 @@ function SavedTests({ notify, draftTests, onLoadDraft, onDeleteDraft }: any) {
           <h1>Your test bank<span className="gradient-text">.</span></h1>
           <p>Curated sets for deliberate practice.</p>
         </div>
-        <button className="primary-button" onClick={() => notify('New test draft created')}>
+        <button className="primary-button" onClick={() => notify('Crop questions and click Save Draft')}>
           <Plus /> Create test
         </button>
       </div>
@@ -1263,7 +1340,7 @@ function SavedTests({ notify, draftTests, onLoadDraft, onDeleteDraft }: any) {
                 <span><Clock3 /> {test.durationMins} min</span>
               </div>
               <div className="test-footer">
-                <small>{test.dateStr}</small>
+                <small>Saved {test.dateStr}</small>
                 <button className="mini-button" onClick={() => onLoadDraft(test.id)}>Attempt <ArrowUpRight /></button>
               </div>
             </motion.div>
@@ -1274,9 +1351,16 @@ function SavedTests({ notify, draftTests, onLoadDraft, onDeleteDraft }: any) {
   )
 }
 
-// Exam Arena Component
-function ExamArena({ examData, currentIndex, onQuestionSelect, onTypeChange, onAnswerChange, onSaveAndNext, onMarkForReview, onClearResponse, onSubmit, onTimeUp, duration, answeredCount, userProfile, examActive }: any) {
+// Exam Arena Component with Subject Navigation Tabs
+function ExamArena({ 
+  examData, currentIndex, onQuestionSelect, onTypeChange, onAnswerChange, 
+  onSaveAndNext, onMarkForReview, onClearResponse, onSubmit, onTimeUp, 
+  duration, answeredCount, userProfile, examActive, activeSubject, onSubjectChange 
+}: any) {
   const currentQuestion = examData[currentIndex]
+
+  // Filter questions for the question palette based on active subject
+  const subjectQuestions = examData.filter((q: Question) => (q.subject || 'physics') === activeSubject)
 
   if (!currentQuestion) return null
 
@@ -1288,12 +1372,67 @@ function ExamArena({ examData, currentIndex, onQuestionSelect, onTypeChange, onA
           <h1>Examination Mode</h1>
         </div>
         <div className="exam-top-right">
-          <Pill color="rose">+4 / −1</Pill>
+          <Pill color="rose">+4 / −2 (Adv Partial)</Pill>
           <div className="exam-candidate">
             <div className="avatar small">{userProfile ? getInitials(userProfile.name) : 'CB'}</div>
             <span>{userProfile?.name || 'Candidate'}</span>
           </div>
         </div>
+      </div>
+
+      {/* Top Subject Tab Navigation */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '10px 16px',
+        borderRadius: '12px',
+        marginBottom: '16px',
+        background: 'rgba(15, 15, 26, 0.75)',
+        border: '1px solid rgba(139, 92, 246, 0.25)',
+        backdropFilter: 'blur(12px)'
+      }}>
+        <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.08em', color: '#94a3b8', textTransform: 'uppercase', marginRight: '4px' }}>
+          SECTION:
+        </div>
+        {(['physics', 'chemistry', 'maths'] as Subject[]).map((subj) => {
+          const count = examData.filter((q: Question) => (q.subject || 'physics') === subj).length
+          const isSelected = activeSubject === subj
+          return (
+            <button
+              key={subj}
+              onClick={() => onSubjectChange(subj)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 20px',
+                borderRadius: '8px',
+                fontWeight: 700,
+                fontSize: '13px',
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                border: isSelected ? '1px solid #a855f7' : '1px solid rgba(255, 255, 255, 0.08)',
+                background: isSelected ? 'linear-gradient(135deg, #7c3aed, #9333ea)' : 'rgba(255, 255, 255, 0.03)',
+                color: isSelected ? '#ffffff' : '#94a3b8',
+                boxShadow: isSelected ? '0 0 16px rgba(147, 51, 234, 0.45)' : 'none'
+              }}
+            >
+              <span>{subj}</span>
+              <span style={{
+                fontSize: '10px',
+                padding: '2px 6px',
+                borderRadius: '999px',
+                background: isSelected ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.06)',
+                color: isSelected ? '#fff' : '#64748b'
+              }}>
+                {count}
+              </span>
+            </button>
+          )
+        })}
       </div>
 
       <div className="exam-layout">
@@ -1312,7 +1451,7 @@ function ExamArena({ examData, currentIndex, onQuestionSelect, onTypeChange, onA
 
           <div className="question-billboard glass">
             <div className="billboard-toolbar">
-              <Pill color="violet">QUESTION • Q{currentIndex + 1}</Pill>
+              <Pill color="violet">Q{currentIndex + 1} • {(currentQuestion.subject || 'physics').toUpperCase()}</Pill>
               <div>
                 <button className="icon-button"><ZoomOut /></button>
                 <button className="icon-button"><ZoomIn /></button>
@@ -1374,7 +1513,6 @@ function ExamArena({ examData, currentIndex, onQuestionSelect, onTypeChange, onA
   )
 }
 
-// Profile Component
 function Profile({ userProfile, onSaveProfile, setModal, notify }: any) {
   return (
     <>
@@ -1409,9 +1547,9 @@ function Profile({ userProfile, onSaveProfile, setModal, notify }: any) {
             <Settings2 />
           </div>
           {[
-            ['Default duration', '45 minutes'],
-            ['Marking scheme', '+4 / −1'],
-            ['Question order', 'Sequential'],
+            ['Default duration', '180 minutes'],
+            ['Marking scheme', '+4 / −2 (Adv Partial)'],
+            ['Sections', 'Physics, Chemistry, Maths'],
             ['Ambient sound', 'Off']
           ].map(([a, b]) => (
             <div className="preference-row" key={a}>
