@@ -24,7 +24,7 @@ import { AnswerInputs } from '@/components/exam/AnswerInputs'
 import { AnswerKeyImport } from '@/components/evaluation/AnswerKeyImport'
 import { ResultsHub } from '@/components/results/ResultsHub'
 import { Scorecard } from '@/components/results/Scorecard'
-import { extractKeyMapFromText, evaluateQuestionWithKey, calculateTestResults } from '@/lib/evaluation'
+import { extractKeyMapFromText, evaluateQuestionWithKey, calculateTestResults, hasAttempted } from '@/lib/evaluation'
 
 const nav = [
   { label: 'Dashboard', icon: LayoutDashboard, color: 'violet' }, 
@@ -343,11 +343,53 @@ export default function Page() {
     notify('Exam submitted! Please import answer key for evaluation.')
   }
 
-  // Evaluation Management
-  const handleEvaluationComplete = () => {
+  // Evaluation Management - Robustly accepts payload from AnswerKeyImport
+  const handleEvaluationComplete = (payload?: any) => {
     setShowAnswerKeyImport(false)
     
-    const results = calculateTestResults(examData)
+    let questionsToEvaluate = [...examData]
+    let keyMap: Record<string | number, any> | undefined = undefined
+
+    if (Array.isArray(payload)) {
+      questionsToEvaluate = payload
+    } else if (typeof payload === 'string') {
+      keyMap = extractKeyMapFromText(payload)
+    } else if (payload && typeof payload === 'object') {
+      if (Array.isArray(payload.questions)) {
+        questionsToEvaluate = payload.questions
+      }
+      if (payload.keyMap && typeof payload.keyMap === 'object') {
+        keyMap = payload.keyMap
+      } else if (!Array.isArray(payload.questions)) {
+        const keys = Object.keys(payload)
+        if (keys.some(k => !isNaN(Number(k)) || /^\d+$/.test(k))) {
+          keyMap = payload
+        }
+      }
+    }
+
+    if (keyMap) {
+      questionsToEvaluate = questionsToEvaluate.map((q, idx) => {
+        const qNum = Number(String(q.id ?? (idx + 1)).replace(/[^\d]/g, '')) || (idx + 1)
+        const official = keyMap![qNum] ?? keyMap![String(qNum)] ?? keyMap![q.id] ?? q.officialAnswer
+        const updatedQ = { ...q, officialAnswer: official }
+        if (official !== undefined && official !== null) {
+          evaluateQuestionWithKey(updatedQ, official)
+        }
+        return updatedQ
+      })
+    } else {
+      questionsToEvaluate = questionsToEvaluate.map((q) => {
+        const updatedQ = { ...q }
+        if (updatedQ.officialAnswer !== undefined && updatedQ.officialAnswer !== null) {
+          evaluateQuestionWithKey(updatedQ, updatedQ.officialAnswer)
+        }
+        return updatedQ
+      })
+    }
+
+    const results = calculateTestResults(questionsToEvaluate, keyMap)
+    setExamData(results.normalizedQuestions)
     
     const newRecord: TestRecord = {
       id: generateId('test'),
@@ -406,10 +448,8 @@ export default function Page() {
     }
   }
 
-  const answeredCount = examData.filter(q => {
-    if (q.type === 'multi') return Array.isArray(q.choice) && q.choice.length > 0
-    return q.choice !== null && String(q.choice).trim() !== ''
-  }).length
+  // Universal attempt check
+  const answeredCount = examData.filter(q => hasAttempted(q.choice)).length
 
   return (
     <div className="app-shell">
@@ -1364,7 +1404,6 @@ function ExamArena({
 }: any) {
   const currentQuestion = examData[currentIndex]
 
-  // Filter questions for the question palette based on active subject
   const subjectQuestions = examData.filter((q: Question) => (q.subject || 'physics') === activeSubject)
 
   if (!currentQuestion) return null
