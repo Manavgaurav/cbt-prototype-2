@@ -1,11 +1,13 @@
 'use client'
-
 // User Profile Types
 export interface UserProfile {
   name: string
   target: string
   roll?: string
 }
+
+// Subject Type definition for CBT
+export type Subject = 'physics' | 'chemistry' | 'maths'
 
 // Question Types
 export interface Question {
@@ -20,6 +22,7 @@ export interface Question {
   eval: 'unattempted' | 'correct' | 'partial' | 'wrong' | 'skip'
   awardedMarks: number
   officialAnswer: string | string[] | number | null
+  subject?: Subject
 }
 
 // Draft Test Types
