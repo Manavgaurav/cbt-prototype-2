@@ -63,6 +63,11 @@ export default function Page() {
 
   // Subject Management State
   const [activeCropSubject, setActiveCropSubject] = useState<Subject>('physics')
+  const activeCropSubjectRef = useRef<Subject>(activeCropSubject)
+
+  useEffect(() => {
+    activeCropSubjectRef.current = activeCropSubject
+  }, [activeCropSubject])
   const [activeExamSubject, setActiveExamSubject] = useState<Subject>('physics')
 
   // PDF and Question State
@@ -157,11 +162,11 @@ export default function Page() {
       eval: 'unattempted',
       awardedMarks: 0,
       officialAnswer: null,
-      subject: activeCropSubject
+      subject: activeCropSubjectRef.current
     }
     
     setQuestions(prev => [...prev, newQuestion])
-    notify(`Q#${newQuestion.id} captured into [${activeCropSubject.toUpperCase()}]!`)
+    notify(`Q#${newQuestion.id} captured into [${newQuestion.subject.toUpperCase()}]!`)
   }
 
   const deleteQuestion = (index: number) => {
