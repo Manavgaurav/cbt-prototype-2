@@ -1,5 +1,4 @@
 'use client'
-
 import { Question } from './storage'
 
 // Universal Answer Key Parser
@@ -35,7 +34,7 @@ export function extractKeyMapFromText(rawText: string): Record<number, string | 
       return
     }
 
-    const cleaned = String(answer).replace(/^\[|\]$/g, '').trim().toUpperCase()
+    const cleaned = String(answer).replace(/^\[\vert{}\]$/g, '').trim().toUpperCase()
 
     // Support all common multiple-correct forms:
     // AD, ABC, A,D, A D, [A,D], ["A","D"].
@@ -157,7 +156,7 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
     return
   }
 
-  // 2. MULTIPLE CORRECT EVALUATION
+  // 2. MULTIPLE CORRECT EVALUATION (JEE ADVANCED PATTERN)
   if (Array.isArray(official) || q.type === 'multi') {
     q.type = 'multi'
     const normalizeChoices = (value: any): string[] => {
@@ -183,14 +182,25 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
     const wrongSelected = userChoices.filter(c => !offChoices.includes(c))
 
     if (wrongSelected.length > 0) {
+      // Kisi bhi galat option ko choose karne par negative marking
       q.eval = 'wrong'
       q.awardedMarks = -2
     } else if (correctSelected.length === offChoices.length) {
+      // Saare correct options choose karne par full marks
       q.eval = 'correct'
       q.awardedMarks = 4
     } else if (correctSelected.length > 0) {
+      // JEE Advanced Partial Marking Logic:
       q.eval = 'partial'
-      q.awardedMarks = correctSelected.length
+      if (offChoices.length === 4 && correctSelected.length === 3) {
+        q.awardedMarks = 3
+      } else if (offChoices.length >= 3 && correctSelected.length === 2) {
+        q.awardedMarks = 2
+      } else if (offChoices.length >= 2 && correctSelected.length === 1) {
+        q.awardedMarks = 1
+      } else {
+        q.awardedMarks = correctSelected.length
+      }
     } else {
       q.eval = 'skip'
       q.awardedMarks = 0
