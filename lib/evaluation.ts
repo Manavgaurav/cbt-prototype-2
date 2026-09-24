@@ -131,18 +131,15 @@ export function extractKeyMapFromText(rawText: string): Record<number, string | 
 export function evaluateQuestionWithKey(q: Question, official: string | string[] | number): void {
   q.officialAnswer = official
 
-  // A question is multi-correct if its type says so, the key is an array,
-  // or the key is a compact string such as "ABC" / "AD".
-  const isMultiCorrect =
-    q.type === 'multi' ||
-    Array.isArray(official) ||
-    (typeof official === 'string' && /^[A-D]{2,}$/i.test(official.trim()))
-
-  const hasAttempted = isMultiCorrect
-    ? (Array.isArray(q.choice)
-        ? q.choice.length > 0
-        : (q.choice !== null && q.choice !== undefined && String(q.choice).trim() !== ''))
-    : (q.choice !== null && q.choice !== undefined && String(q.choice).trim() !== '')
+  // Do not depend on q.type to decide whether the question was attempted.
+  // A multi-correct question may still have q.type === "single", and a
+  // single selected option can be stored as a string.
+  const hasAttempted =
+    q.choice !== null &&
+    q.choice !== undefined &&
+    (Array.isArray(q.choice)
+      ? q.choice.length > 0
+      : String(q.choice).trim() !== '')
 
   if (!hasAttempted) {
     q.eval = 'skip'
@@ -150,24 +147,38 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
     return
   }
 
-  // 1. NUMERICAL / INTEGER EVALUATION
-  // Keep the existing +4 / 0 behaviour.
-  if (q.type === 'integer' || (!isMultiCorrect && !isNaN(Number(official)) && !Array.isArray(official))) {
+  // Detect multi-correct from the question type OR from the official key.
+  const isMultiCorrect =
+    q.type === 'multi' ||
+    Array.isArray(official) ||
+    (typeof official === 'string' && /^[A-D]{2,}$/i.test(official.trim()))
+
+  // 1. NUMERICAL / INTEGER
+  if (
+    q.type === 'integer' ||
+    (!isMultiCorrect && !isNaN(Number(official)) && !Array.isArray(official))
+  ) {
     q.type = 'integer'
+
     const userNum = parseFloat(String(q.choice))
     const offNum = parseFloat(String(official))
 
-    if (!isNaN(userNum) && !isNaN(offNum) && Math.abs(userNum - offNum) < 0.001) {
+    if (
+      !isNaN(userNum) &&
+      !isNaN(offNum) &&
+      Math.abs(userNum - offNum) < 0.001
+    ) {
       q.eval = 'correct'
       q.awardedMarks = 4
     } else {
       q.eval = 'wrong'
       q.awardedMarks = 0
     }
+
     return
   }
 
-  // 2. MULTIPLE-CORRECT EVALUATION (JEE ADVANCED)
+  // 2. MULTIPLE CORRECT / JEE ADVANCED
   if (isMultiCorrect) {
     q.type = 'multi'
 
@@ -177,43 +188,54 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
           .flat(Infinity)
           .map(v => String(v ?? '').trim().toUpperCase())
           .filter(Boolean)
-          .flatMap(v => /^[A-D]{2,}$/.test(v) ? v.split('') : v.split(/[\s,;|]+/))
+          .flatMap(v =>
+            /^[A-D]{2,}$/.test(v)
+              ? v.split('')
+              : v.split(/[\s,;|]+/)
+          )
           .filter(Boolean)
       }
 
       const text = String(value ?? '').trim().toUpperCase()
+
       if (!text) return []
 
-      // "ABC" -> ["A", "B", "C"], "AD" -> ["A", "D"]
-      if (/^[A-D]{2,}$/.test(text)) return text.split('')
+      if (/^[A-D]{2,}$/.test(text)) {
+        return text.split('')
+      }
 
-      return text.split(/[\s,;|]+/).filter(Boolean)
+      return text
+        .split(/[\s,;|]+/)
+        .map(v => v.trim())
+        .filter(Boolean)
     }
 
     const userChoices = [...new Set(normalizeChoices(q.choice))].sort()
     const offChoices = [...new Set(normalizeChoices(official))].sort()
 
-    const correctSelected = userChoices.filter(choice => offChoices.includes(choice))
-    const wrongSelected = userChoices.filter(choice => !offChoices.includes(choice))
+    const correctSelected = userChoices.filter(choice =>
+      offChoices.includes(choice)
+    )
 
-    // Any incorrect option selected => wrong / -2.
+    const wrongSelected = userChoices.filter(choice =>
+      !offChoices.includes(choice)
+    )
+
     if (wrongSelected.length > 0) {
       q.eval = 'wrong'
       q.awardedMarks = -2
       return
     }
 
-    // All official options selected and no extra option => full marks.
     if (
-      correctSelected.length === offChoices.length &&
-      userChoices.length === offChoices.length
+      userChoices.length === offChoices.length &&
+      correctSelected.length === offChoices.length
     ) {
       q.eval = 'correct'
       q.awardedMarks = 4
       return
     }
 
-    // Correct subset only => partial marks.
     if (correctSelected.length > 0) {
       q.eval = 'partial'
 
@@ -226,17 +248,21 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
       } else {
         q.awardedMarks = correctSelected.length
       }
+
       return
     }
 
-    q.eval = 'skip'
-    q.awardedMarks = 0
+    // Attempted, but no correct option selected.
+    q.eval = 'wrong'
+    q.awardedMarks = -2
     return
   }
 
-  // 3. SINGLE CHOICE EVALUATION
-  // Keep the existing +4 / -1 behaviour.
-  if (String(q.choice).toUpperCase() === String(official).toUpperCase()) {
+  // 3. SINGLE CHOICE
+  if (
+    String(q.choice).trim().toUpperCase() ===
+    String(official).trim().toUpperCase()
+  ) {
     q.eval = 'correct'
     q.awardedMarks = 4
   } else {
@@ -246,21 +272,6 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
 }
 
 export function calculateTestResults(questions: Question[]) {
-  // Re-evaluate questions that already have an official answer attached.
-  // This prevents a stale "skip" state from surviving final result calculation.
-  questions.forEach((q) => {
-    if (
-      q &&
-      q.officialAnswer !== null &&
-      q.officialAnswer !== undefined &&
-      q.choice !== null &&
-      q.choice !== undefined &&
-      String(q.choice).trim() !== ''
-    ) {
-      evaluateQuestionWithKey(q, q.officialAnswer)
-    }
-  })
-
   let score = 0
   let correct = 0
   let partial = 0
