@@ -9,7 +9,6 @@ import { Question } from './storage'
 export function normalizeOptions(value: any): string[] {
   if (value === null || value === undefined) return []
 
-  // If already an array, flatten and process each element
   if (Array.isArray(value)) {
     return [
       ...new Set(
@@ -20,7 +19,6 @@ export function normalizeOptions(value: any): string[] {
     ].sort()
   }
 
-  // Convert to string and strip enclosing brackets/quotes/spaces
   let text = String(value)
     .replace(/[\[\]{}"']/g, '')
     .trim()
@@ -28,18 +26,15 @@ export function normalizeOptions(value: any): string[] {
 
   if (!text) return []
 
-  // If pure letter sequence like "ABC" or "AD"
   if (/^[A-D]{2,}$/.test(text)) {
     return [...new Set(text.split(''))].sort()
   }
 
-  // Split by comma, semicolon, pipe, or whitespace
   const tokens = text
     .split(/[\s,;|]+/)
     .map(v => v.trim())
     .filter(Boolean)
 
-  // Expand any combined tokens like ["A", "BC"] -> ["A", "B", "C"]
   const finalTokens: string[] = []
   for (const token of tokens) {
     if (/^[A-D]{2,}$/.test(token)) {
@@ -52,10 +47,6 @@ export function normalizeOptions(value: any): string[] {
   return [...new Set(finalTokens)].sort()
 }
 
-/**
- * Universal attempt check:
- * Returns true if string, number, or non-empty array is present.
- */
 export function hasAttempted(choice: any): boolean {
   if (choice === null || choice === undefined) return false
   if (Array.isArray(choice)) {
@@ -64,17 +55,20 @@ export function hasAttempted(choice: any): boolean {
   return String(choice).trim() !== ''
 }
 
-// Universal Answer Key Parser
 export function extractKeyMapFromText(rawText: string): Record<number, string | string[] | number> {
   const keyMap: Record<number, string | string[] | number> = {}
-  const source = String(rawText ?? '').replace(/\uFEFF/g, '').trim()
+  
+  // 1. Clean invisible characters and trim
+  let source = String(rawText ?? '').replace(/\uFEFF/g, '').trim()
   if (!source) return keyMap
+
+  // 2. Strip markdown code fences if AI outputs ```json ... ```
+  source = source.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
 
   const assign = (qNum: string | number, value: any) => {
     const n = Number.parseInt(String(qNum).replace(/[^\d]/g, ''), 10)
     if (!Number.isInteger(n) || n < 1) return
 
-    // If numerical answer
     const strVal = String(value ?? '').replace(/[\[\]"']/g, '').trim()
     if (!isNaN(Number(strVal)) && strVal !== '') {
       keyMap[n] = strVal
@@ -134,9 +128,7 @@ export function extractKeyMapFromText(rawText: string): Record<number, string | 
 
   try {
     walk(JSON.parse(source))
-  } catch (_) {
-    // Continue with text fallbacks
-  }
+  } catch (_) {}
 
   const pairRe = /(?:^|[,{;\n\r])\s*["']?(?:q(?:uestion)?\s*)?(\d+)["']?\s*[:=\-.)]\s*(\[[^\]]*\]|["'][^"']*["']|[A-Za-z0-9.+\-]+(?:\s*(?:,|\/|\s)\s*[A-Za-z0-9.+\-]+)*)/gi
   let match
@@ -164,7 +156,6 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
     return
   }
 
-  // Pre-normalize options to check for multi-correct reliably
   const normalizedOfficial = normalizeOptions(official)
   const isMultiCorrect =
     q.type === 'multi' ||
@@ -172,7 +163,7 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
     normalizedOfficial.length > 1 ||
     (typeof official === 'string' && /^[A-D]{2,}$/i.test(official.trim()))
 
-  // 1. NUMERICAL / INTEGER EVALUATION
+  // 1. Numerical / Integer
   if (
     q.type === 'integer' ||
     q.type === 'numerical' ||
@@ -188,12 +179,12 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
       q.awardedMarks = 4
     } else {
       q.eval = 'wrong'
-      q.awardedMarks = 0 // Numerical wrong is 0
+      q.awardedMarks = 0
     }
     return
   }
 
-  // 2. MULTIPLE CORRECT / JEE ADVANCED EVALUATION
+  // 2. Multiple Correct
   if (isMultiCorrect) {
     q.type = 'multi'
 
@@ -209,24 +200,21 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
     const correctSelected = userChoices.filter(choice => offChoices.includes(choice))
     const wrongSelected = userChoices.filter(choice => !offChoices.includes(choice))
 
-    // If ANY incorrect option is chosen -> -2
     if (wrongSelected.length > 0) {
       q.eval = 'wrong'
       q.awardedMarks = -2
       return
     }
 
-    // All correct options chosen -> +4
     if (userChoices.length === offChoices.length && correctSelected.length === offChoices.length) {
       q.eval = 'correct'
       q.awardedMarks = 4
       return
     }
 
-    // Partial correct (Only correct options selected, no wrong option)
     if (correctSelected.length > 0) {
       q.eval = 'partial'
-      q.awardedMarks = correctSelected.length // +1 for each correct option marked
+      q.awardedMarks = correctSelected.length
       return
     }
 
@@ -235,7 +223,7 @@ export function evaluateQuestionWithKey(q: Question, official: string | string[]
     return
   }
 
-  // 3. SINGLE CHOICE EVALUATION
+  // 3. Single Choice
   const userChoice = normalizeOptions(q.choice)[0] ?? ''
   const offChoice = normalizedOfficial[0] ?? ''
 
@@ -264,7 +252,6 @@ export function calculateTestResults(
   const normalizedQuestions = questions.map((q) => {
     const safeQ = q && typeof q === 'object' ? q : ({} as Question)
 
-    // Re-evaluate if keyMap is provided or question has officialAnswer
     const activeKey =
       (keyMap && safeQ.id !== undefined && keyMap[safeQ.id] !== undefined)
         ? keyMap[safeQ.id]
