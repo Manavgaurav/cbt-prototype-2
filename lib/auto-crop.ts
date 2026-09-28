@@ -22,6 +22,9 @@ const SLICE_PADDING = 12
 /** Text lines closer than this (canvas px) are treated as the same line. */
 const LINE_TOLERANCE = 4
 
+/** A pixel darker than this (0-255, per channel) counts as ink. */
+const INK_THRESHOLD = 245
+
 export interface AutoCropResult {
   dataUrl: string
   pageNum: number
@@ -72,6 +75,37 @@ function asTextItem(item: unknown): PdfLikeTextItem | null {
 function normalizeLabel(raw: string): string {
   const match = raw.match(/\d+/)
   return match ? `Q${match[0]}` : raw.trim().slice(0, 12)
+}
+
+/**
+ * Scans the rendered page for the first and last row containing ink, so
+ * graphics that live outside any text run (diagrams, graphs, structures) are
+ * still part of the page's content band.
+ */
+function findInkBounds(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D): { top: number; bottom: number } | null {
+  let data: Uint8ClampedArray
+  try {
+    data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+  } catch {
+    return null
+  }
+
+  let top = -1
+  let bottom = -1
+
+  for (let y = 0; y < canvas.height; y++) {
+    const rowStart = y * canvas.width * 4
+    for (let x = 0; x < canvas.width; x++) {
+      const i = rowStart + x * 4
+      if (data[i] < INK_THRESHOLD || data[i + 1] < INK_THRESHOLD || data[i + 2] < INK_THRESHOLD) {
+        if (top === -1) top = y
+        bottom = y
+        break
+      }
+    }
+  }
+
+  return top === -1 ? null : { top, bottom }
 }
 
 /** Groups text items of a page into visual lines using viewport coordinates. */
@@ -146,9 +180,13 @@ async function renderPage(pdfDoc: PDFDocumentProxy, pageNum: number): Promise<Re
   const lines = buildTextLines(textContent.items, viewport, AUTO_CROP_SCALE)
   const markers = findMarkers(lines)
 
-  const contentTop = lines.length ? Math.max(0, lines[0].top - SLICE_PADDING) : 0
-  const contentBottom = lines.length
-    ? Math.min(canvas.height, Math.max(...lines.map((l) => l.bottom)) + SLICE_PADDING)
+  const ink = findInkBounds(canvas, ctx)
+  const tops = [...lines.map((l) => l.top), ...(ink ? [ink.top] : [])]
+  const bottoms = [...lines.map((l) => l.bottom), ...(ink ? [ink.bottom] : [])]
+
+  const contentTop = tops.length ? Math.max(0, Math.min(...tops) - SLICE_PADDING) : 0
+  const contentBottom = bottoms.length
+    ? Math.min(canvas.height, Math.max(...bottoms) + SLICE_PADDING)
     : canvas.height
 
   return { pageNum, canvas, markers, contentTop, contentBottom }
