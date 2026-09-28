@@ -9,7 +9,7 @@ import {
   HelpCircle, History, LayoutDashboard, ListChecks, Menu, MoreHorizontal, PanelLeft,
   Pencil, Play, Plus, RotateCcw, Search, Settings2, Target, Trash2,
   UploadCloud, UserRound, X, Zap, ZoomIn, ZoomOut, Save as SaveIcon, Star, Flag, Atom,
-  Scissors, SlidersHorizontal, Loader2
+  Scissors, SlidersHorizontal, Loader2, Link2
 } from 'lucide-react'
 
 // Import our custom utilities and components
@@ -47,6 +47,40 @@ function StatCard({ icon: Icon, label, value, detail, accent }: any) {
     <div className="stat-top"><span className="icon-box"><Icon /></span><span className="stat-detail">{detail}</span></div>
     <div className="stat-value mono">{value}</div><div className="stat-label">{label}</div>
   </motion.div>
+}
+
+// Utility to merge two question images vertically into one
+const mergeTwoQuestions = async (topImgUrl: string, bottomImgUrl: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const img1 = new Image()
+    const img2 = new Image()
+    let loaded = 0
+
+    const onLoad = () => {
+      loaded++
+      if (loaded === 2) {
+        const width = Math.max(img1.naturalWidth, img2.naturalWidth)
+        const height = img1.naturalHeight + img2.naturalHeight
+
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, width, height)
+          ctx.drawImage(img1, 0, 0)
+          ctx.drawImage(img2, 0, img1.naturalHeight)
+        }
+        resolve(canvas.toDataURL('image/png'))
+      }
+    }
+
+    img1.onload = onLoad
+    img2.onload = onLoad
+    img1.src = topImgUrl
+    img2.src = bottomImgUrl
+  })
 }
 
 // Interactive Split Modal for merged questions (e.g. Q5 + Q6)
@@ -184,6 +218,175 @@ function SplitModal({ question, onClose, onSplit }: { question: Question, onClos
   )
 }
 
+// Bulk Review & Subject Section Assignment Modal
+function BulkReviewModal({ 
+  detectedItems, 
+  onClose, 
+  onConfirm 
+}: { 
+  detectedItems: Question[], 
+  onClose: () => void, 
+  onConfirm: (finalItems: Question[]) => void 
+}) {
+  const [items, setItems] = useState<Question[]>(detectedItems)
+  const [fromQ, setFromQ] = useState(1)
+  const [toQ, setToQ] = useState(detectedItems.length)
+  const [targetSubject, setTargetSubject] = useState<Subject>('physics')
+
+  const applyBulkSubject = () => {
+    if (fromQ > toQ || fromQ < 1 || toQ > items.length) {
+      toast.error('Invalid question range!')
+      return
+    }
+    setItems(prev => prev.map((q, idx) => {
+      const qNum = idx + 1
+      if (qNum >= fromQ && qNum <= toQ) {
+        return { ...q, subject: targetSubject }
+      }
+      return q
+    }))
+    toast.success(`Q#${fromQ} to Q#${toQ} assigned to ${targetSubject.toUpperCase()}!`)
+  }
+
+  const handleCardSubjectChange = (idx: number, subj: Subject) => {
+    setItems(prev => {
+      const next = [...prev]
+      next[idx] = { ...next[idx], subject: subj }
+      return next
+    })
+  }
+
+  const handleDeleteItem = (idx: number) => {
+    setItems(prev => prev.filter((_, i) => i !== idx).map((q, i) => ({ ...q, id: i + 1 })))
+  }
+
+  return (
+    <div className="modal-overlay" style={{ zIndex: 99999 }}>
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }} 
+        animate={{ opacity: 1, scale: 1 }} 
+        className="modal glass" 
+        style={{ maxWidth: '1150px', width: '95%', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}
+      >
+        <div className="modal-header">
+          <div>
+            <div className="eyebrow" style={{ color: '#06b6d4' }}>AUTO-CROP PREVIEW & ASSIGNMENT</div>
+            <h2>Review & Tag Sections ({items.length} Questions)</h2>
+          </div>
+          <button className="icon-button" onClick={onClose}><X /></button>
+        </div>
+
+        {/* Bulk Assign Toolbar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(139, 92, 246, 0.25)', flexWrap: 'wrap', margin: '4px 0 12px 0' }}>
+          <span style={{ fontSize: '11px', fontWeight: 800, color: '#c084fc', letterSpacing: '0.05em' }}>RANGE ASSIGN:</span>
+          <span style={{ fontSize: '12px', color: '#94a3b8' }}>From Q</span>
+          <input 
+            type="number" 
+            min={1} 
+            max={items.length} 
+            value={fromQ} 
+            onChange={e => setFromQ(Math.max(1, Number(e.target.value)))} 
+            style={{ width: '45px', textAlign: 'center', background: '#0b0f19', color: '#f8fafc', border: '1px solid #334155', borderRadius: '4px', padding: '3px', fontWeight: 700 }} 
+          />
+          <span style={{ fontSize: '12px', color: '#94a3b8' }}>to Q</span>
+          <input 
+            type="number" 
+            min={fromQ} 
+            max={items.length} 
+            value={toQ} 
+            onChange={e => setToQ(Math.min(items.length, Number(e.target.value)))} 
+            style={{ width: '45px', textAlign: 'center', background: '#0b0f19', color: '#f8fafc', border: '1px solid #334155', borderRadius: '4px', padding: '3px', fontWeight: 700 }} 
+          />
+          
+          <select 
+            value={targetSubject} 
+            onChange={e => setTargetSubject(e.target.value as Subject)} 
+            style={{ background: '#0b0f19', color: '#38bdf8', border: '1px solid #334155', borderRadius: '6px', padding: '5px 10px', fontWeight: 700 }}
+          >
+            <option value="physics">Physics</option>
+            <option value="chemistry">Chemistry</option>
+            <option value="maths">Maths</option>
+          </select>
+
+          <button 
+            className="primary-button" 
+            onClick={applyBulkSubject} 
+            style={{ padding: '6px 16px', fontSize: '12px', background: 'linear-gradient(135deg, #7c3aed, #9333ea)' }}
+          >
+            Apply Section Tag
+          </button>
+        </div>
+
+        {/* Grid Preview of Questions */}
+        <div style={{ overflowY: 'auto', flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px', padding: '6px 2px' }}>
+          {items.map((q, idx) => {
+            const subjColor = q.subject === 'physics' ? '#a855f7' : q.subject === 'chemistry' ? '#06b6d4' : '#10b981'
+            return (
+              <div 
+                key={idx} 
+                style={{ 
+                  background: 'rgba(15, 23, 42, 0.75)', 
+                  border: `1px solid ${subjColor}40`, 
+                  borderRadius: '10px', 
+                  padding: '10px', 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: '8px' 
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 800, fontSize: '12px', color: '#f8fafc' }}>Q#{idx + 1}</span>
+                  <select 
+                    value={q.subject || 'physics'} 
+                    onChange={e => handleCardSubjectChange(idx, e.target.value as Subject)}
+                    style={{ 
+                      background: 'rgba(0,0,0,0.4)', 
+                      color: subjColor, 
+                      border: `1px solid ${subjColor}80`, 
+                      borderRadius: '6px', 
+                      fontSize: '11px', 
+                      fontWeight: 700, 
+                      padding: '2px 6px',
+                      textTransform: 'uppercase'
+                    }}
+                  >
+                    <option value="physics">Physics</option>
+                    <option value="chemistry">Chemistry</option>
+                    <option value="maths">Maths</option>
+                  </select>
+                  <button 
+                    className="icon-button subtle" 
+                    onClick={() => handleDeleteItem(idx)}
+                    style={{ padding: '4px' }}
+                    title="Remove item"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+                
+                <div style={{ background: '#fff', borderRadius: '6px', padding: '4px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <img src={q.img} alt={`Q${idx + 1}`} style={{ width: '100%', maxHeight: '180px', objectFit: 'contain' }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="modal-actions" style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <button className="secondary-button" onClick={onClose}>Discard</button>
+          <button 
+            className="primary-button" 
+            onClick={() => onConfirm(items)}
+            style={{ background: 'linear-gradient(135deg, #06b6d4, #8b5cf6)' }}
+          >
+            Confirm & Add All to Queue ({items.length})
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
 export default function Page() {
   // UI State
   const [active, setActive] = useState('Dashboard')
@@ -196,6 +399,9 @@ export default function Page() {
 
   // Split Modal State
   const [splittingQuestion, setSplittingQuestion] = useState<{ question: Question, index: number } | null>(null)
+
+  // Bulk Review Modal State
+  const [pendingAutoCropItems, setPendingAutoCropItems] = useState<Question[] | null>(null)
 
   // User Profile State
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
@@ -300,7 +506,7 @@ export default function Page() {
     notify(`PDF loaded! ${totalPages || 'Multiple'} pages ready.`)
   }
 
-  // Auto Crop Action with Page Range Filtering
+  // Auto Crop Action with Page Range Filtering & Review Screen Trigger
   const handleRunAutoCrop = async () => {
     if (!pdfDoc) {
       notify('Please upload a PDF document first!')
@@ -331,7 +537,7 @@ export default function Page() {
         return
       }
 
-      const newQuestions: Question[] = filteredSlices.map((slice: any, idx: number) => ({
+      const preparedQuestions: Question[] = filteredSlices.map((slice: any, idx: number) => ({
         id: questions.length + idx + 1,
         img: slice.dataUrl,
         page: slice.pageNum || slice.page || pageStart,
@@ -346,13 +552,55 @@ export default function Page() {
         subject: activeCropSubjectRef.current
       }))
 
-      setQuestions(prev => [...prev, ...newQuestions])
-      notify(`Success! ${newQuestions.length} questions captured from pages ${pageStart}–${pageEnd}.`)
+      // Open the Bulk Review & Section Assignment Modal
+      setPendingAutoCropItems(preparedQuestions)
+      notify(`Captured ${preparedQuestions.length} questions! Review and assign sections.`)
     } catch (err: any) {
       console.error(err)
       toast.error('Auto crop encountered an issue. You can crop manually!')
     } finally {
       setIsAutoCropping(false)
+    }
+  }
+
+  // Confirm Auto Crop from Review Screen
+  const handleConfirmAutoCrop = (finalItems: Question[]) => {
+    setQuestions(prev => {
+      const startId = prev.length
+      const normalized = finalItems.map((q, i) => ({ ...q, id: startId + i + 1 }))
+      return [...prev, ...normalized]
+    })
+    setPendingAutoCropItems(null)
+    notify(`Added ${finalItems.length} questions to your queue!`)
+  }
+
+  // Merge Question with the Next Question in Queue
+  const handleMergeWithNext = async (index: number) => {
+    if (index >= questions.length - 1) {
+      notify('Next question not found to merge!')
+      return
+    }
+
+    try {
+      notify('Merging current question with next part...')
+      const currentQ = questions[index]
+      const nextQ = questions[index + 1]
+
+      const mergedDataUrl = await mergeTwoQuestions(currentQ.img, nextQ.img)
+
+      setQuestions(prev => {
+        const updated = [...prev]
+        updated.splice(index, 2, {
+          ...currentQ,
+          img: mergedDataUrl
+        })
+        return updated.map((q, i) => ({ ...q, id: i + 1 }))
+      })
+
+      notify(`Q#${currentQ.id} and Q#${nextQ.id} merged into a single question!`)
+    } catch (err) {
+      console.error(err)
+      toast.error('Could not merge images.')
     }
   }
 
@@ -697,6 +945,15 @@ export default function Page() {
         />
       )}
 
+      {/* Bulk Review & Section Assignment Modal */}
+      {pendingAutoCropItems && (
+        <BulkReviewModal 
+          detectedItems={pendingAutoCropItems}
+          onClose={() => setPendingAutoCropItems(null)}
+          onConfirm={handleConfirmAutoCrop}
+        />
+      )}
+
       {/* Onboarding Modal */}
       {showOnboarding && (
         <div className="modal-overlay" onClick={() => setShowOnboarding(false)}>
@@ -978,6 +1235,7 @@ export default function Page() {
                 onDeleteQuestion={deleteQuestion}
                 onClearQuestions={clearAllQuestions}
                 onSplitQuestion={(q: Question, idx: number) => setSplittingQuestion({ question: q, index: idx })}
+                onMergeWithNext={handleMergeWithNext}
                 currentFileName={currentFileName}
                 activeSubject={activeCropSubject}
                 onSubjectChange={setActiveCropSubject}
@@ -1405,11 +1663,11 @@ function PDFPage({ pageData, totalPages, onCrop }: { pageData: any, totalPages: 
   )
 }
 
-// Studio Component (PDF Upload, Auto Detect + Manual Crop with Split & Page Range)
+// Studio Component (PDF Upload, Auto Detect + Manual Crop with Split, Merge & Bulk Review)
 function Studio({ 
   notify, setModal, loading, error, totalPages, zoom, pagesData, pdfDoc,
   onPDFUpload, onZoomChange, onResetZoom, onCropComplete, questions, 
-  onDeleteQuestion, onClearQuestions, onSplitQuestion, currentFileName, activeSubject, onSubjectChange, onLaunchExam,
+  onDeleteQuestion, onClearQuestions, onSplitQuestion, onMergeWithNext, currentFileName, activeSubject, onSubjectChange, onLaunchExam,
   onRunAutoCrop, isAutoCropping, pageStart, pageEnd, onPageStartChange, onPageEndChange
 }: any) {
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -1634,6 +1892,7 @@ function Studio({
               ) : (
                 filteredQuestions.map((q: Question, index: number) => {
                   const originalIndex = questions.findIndex((item: Question) => item.id === q.id)
+                  const canMerge = originalIndex < questions.length - 1
                   return (
                     <div key={q.id} className="rail-crop-card">
                       <div className="rail-crop-head">
@@ -1644,6 +1903,17 @@ function Studio({
                         <img src={q.img} alt={`Q${q.id}`} />
                       </div>
                       <div className="rail-crop-actions">
+                        {/* Merge With Next Button */}
+                        {canMerge && (
+                          <button 
+                            className="icon-button subtle" 
+                            onClick={() => onMergeWithNext(originalIndex)}
+                            title="Merge this question with the next part below"
+                            style={{ color: '#a855f7' }}
+                          >
+                            <Link2 size={14} />
+                          </button>
+                        )}
                         {/* Split Button for questions that merged together */}
                         <button 
                           className="icon-button subtle" 
