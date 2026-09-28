@@ -9,7 +9,7 @@ import {
   HelpCircle, History, LayoutDashboard, ListChecks, Menu, MoreHorizontal, PanelLeft,
   Pencil, Play, Plus, RotateCcw, Search, Settings2, Target, Trash2,
   UploadCloud, UserRound, X, Zap, ZoomIn, ZoomOut, Save as SaveIcon, Star, Flag, Atom,
-  Scissors, SlidersHorizontal, Loader2, Link2, CheckCheck, Maximize2, Eye
+  Scissors, SlidersHorizontal, Loader2, Link2, CheckCheck, Maximize2, Eye, Undo2
 } from 'lucide-react'
 
 // Import our custom utilities and components
@@ -125,7 +125,7 @@ function SplitModal({ question, onClose, onSplit }: { question: Question, onClos
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 99999 }}>
+    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 999999 }}>
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }} 
         animate={{ opacity: 1, scale: 1 }} 
@@ -218,10 +218,12 @@ function SplitModal({ question, onClose, onSplit }: { question: Question, onClos
   )
 }
 
-// Fullscreen Question Inspector Modal with Navigation & In-place Actions
+// Fullscreen Question Inspector Modal with Navigation, Undo & In-place Actions
 function FullscreenInspectorModal({
   questions,
   currentIndex,
+  canUndo,
+  onUndo,
   onClose,
   onIndexChange,
   onSubjectChange,
@@ -231,6 +233,8 @@ function FullscreenInspectorModal({
 }: {
   questions: Question[],
   currentIndex: number,
+  canUndo: boolean,
+  onUndo: () => void,
   onClose: () => void,
   onIndexChange: (idx: number) => void,
   onSubjectChange: (idx: number, subj: Subject) => void,
@@ -240,10 +244,13 @@ function FullscreenInspectorModal({
 }) {
   const currentQ = questions[currentIndex]
 
-  // Keyboard navigation support
+  // Keyboard navigation & Ctrl+Z Undo support
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' && currentIndex < questions.length - 1) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        if (canUndo) onUndo()
+      } else if (e.key === 'ArrowRight' && currentIndex < questions.length - 1) {
         onIndexChange(currentIndex + 1)
       } else if (e.key === 'ArrowLeft' && currentIndex > 0) {
         onIndexChange(currentIndex - 1)
@@ -253,7 +260,7 @@ function FullscreenInspectorModal({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [currentIndex, questions.length, onIndexChange, onClose])
+  }, [currentIndex, questions.length, canUndo, onUndo, onIndexChange, onClose])
 
   if (!currentQ) return null
 
@@ -313,8 +320,23 @@ function FullscreenInspectorModal({
             </div>
           </div>
 
-          {/* Action buttons (Split, Merge, Delete, Close) */}
+          {/* Action buttons (Undo, Split, Merge, Delete, Close) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* Dedicated Undo Button inside Preview */}
+            <button
+              className="secondary-button"
+              onClick={onUndo}
+              disabled={!canUndo}
+              title="Undo last action (Ctrl+Z)"
+              style={{
+                opacity: canUndo ? 1 : 0.4,
+                color: '#38bdf8',
+                borderColor: canUndo ? 'rgba(56, 189, 248, 0.4)' : 'rgba(255,255,255,0.08)'
+              }}
+            >
+              <Undo2 size={14} /> Undo
+            </button>
+
             <button
               className="secondary-button"
               onClick={() => onSplit(currentQ, currentIndex)}
@@ -338,7 +360,8 @@ function FullscreenInspectorModal({
             <button
               className="secondary-button"
               onClick={() => onDelete(currentIndex)}
-              style={{ color: '#f43f5e', borderColor: 'rgba(244, 63, 94, 0.4)' }}
+              title="Delete this question"
+              style={{ color: '#f43f5e', borderColor: 'rgba(244, 63, 94, 0.4)', background: 'rgba(244, 63, 94, 0.1)' }}
             >
               <Trash2 size={14} /> Delete
             </button>
@@ -389,7 +412,7 @@ function FullscreenInspectorModal({
           </button>
 
           <span style={{ fontSize: '12px', color: '#94a3b8' }}>
-            Tip: Press <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#fff' }}>←</kbd> and <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#fff' }}>→</kbd> on keyboard to quickly flip through questions
+            Tip: Press <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#fff' }}>←</kbd> and <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#fff' }}>→</kbd> to navigate, <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#fff' }}>Ctrl+Z</kbd> to undo
           </span>
 
           <button
@@ -440,6 +463,33 @@ export default function Page() {
   const [questions, setQuestions] = useState<Question[]>([])
   const [currentFileName, setCurrentFileName] = useState('')
   const [isAutoCropping, setIsAutoCropping] = useState(false)
+
+  // UNDO History Stack
+  const [historyStack, setHistoryStack] = useState<Question[][]>([])
+
+  // Helper to commit new state with undo snapshot
+  const updateQuestionsWithHistory = (newQuestionsOrUpdater: Question[] | ((prev: Question[]) => Question[])) => {
+    setQuestions(current => {
+      const nextVal = typeof newQuestionsOrUpdater === 'function' ? newQuestionsOrUpdater(current) : newQuestionsOrUpdater
+      setHistoryStack(hist => [...hist.slice(-25), current])
+      return nextVal
+    })
+  }
+
+  // Universal Undo handler
+  const handleUndo = () => {
+    if (historyStack.length === 0) {
+      notify('Nothing to undo!')
+      return
+    }
+    const previous = historyStack[historyStack.length - 1]
+    setHistoryStack(hist => hist.slice(0, -1))
+    setQuestions(previous)
+    if (inspectingIndex !== null && previous.length > 0) {
+      setInspectingIndex(Math.min(inspectingIndex, previous.length - 1))
+    }
+    notify('Undo successful!')
+  }
 
   // Page Range Filter State for Auto Crop
   const [pageStart, setPageStart] = useState<number>(1)
@@ -584,7 +634,7 @@ export default function Page() {
         subject: activeCropSubjectRef.current
       }))
 
-      setQuestions(prev => [...prev, ...newQuestions])
+      updateQuestionsWithHistory(prev => [...prev, ...newQuestions])
       notify(`Success! ${newQuestions.length} questions captured to queue.`)
     } catch (err: any) {
       console.error(err)
@@ -605,7 +655,7 @@ export default function Page() {
       return
     }
 
-    setQuestions(prev => prev.map((q, idx) => {
+    updateQuestionsWithHistory(prev => prev.map((q, idx) => {
       const qNum = idx + 1
       if (qNum >= bulkFromQ && qNum <= bulkToQ) {
         return { ...q, subject: targetSubj }
@@ -618,7 +668,7 @@ export default function Page() {
 
   // Change individual question subject
   const handleChangeQuestionSubject = (index: number, subj: Subject) => {
-    setQuestions(prev => {
+    updateQuestionsWithHistory(prev => {
       const next = [...prev]
       next[index] = { ...next[index], subject: subj }
       return next
@@ -640,7 +690,7 @@ export default function Page() {
 
       const mergedDataUrl = await mergeTwoQuestions(currentQ.img, nextQ.img)
 
-      setQuestions(prev => {
+      updateQuestionsWithHistory(prev => {
         const updated = [...prev]
         updated.splice(index, 2, {
           ...currentQ,
@@ -673,7 +723,7 @@ export default function Page() {
       subject: activeCropSubjectRef.current
     }
     
-    setQuestions(prev => [...prev, newQuestion])
+    updateQuestionsWithHistory(prev => [...prev, newQuestion])
     notify(`Q#${newQuestion.id} captured into [${newQuestion.subject.toUpperCase()}]!`)
   }
 
@@ -693,7 +743,7 @@ export default function Page() {
       img: img2
     }
 
-    setQuestions(prev => {
+    updateQuestionsWithHistory(prev => {
       const updated = [...prev]
       updated.splice(index, 1, part1, part2)
       return updated.map((q, i) => ({ ...q, id: i + 1 }))
@@ -703,25 +753,37 @@ export default function Page() {
     notify('Successfully split into 2 questions!')
   }
 
-  const deleteQuestion = (index: number) => {
-    setDeleteConfirmation({
-      type: 'question',
-      id: String(index),
-      onConfirm: () => {
-        setQuestions(prev => {
-          const updated = prev.filter((_, i) => i !== index)
-          return updated.map((q, i) => ({ ...q, id: i + 1 }))
-        })
-        if (inspectingIndex !== null) {
-          setInspectingIndex(prev => (prev !== null && prev >= questions.length - 1 ? Math.max(0, questions.length - 2) : prev))
-        }
-        notify('Question removed from queue.')
-      }
+  // Delete directly from Inspector/Preview without z-index conflict
+  const handleDeleteFromInspector = (index: number) => {
+    updateQuestionsWithHistory(prev => {
+      const updated = prev.filter((_, i) => i !== index)
+      return updated.map((q, i) => ({ ...q, id: i + 1 }))
     })
+
+    setInspectingIndex(prev => {
+      if (prev === null) return null
+      const remainingCount = questions.length - 1
+      if (remainingCount <= 0) return null
+      if (prev >= remainingCount) return remainingCount - 1
+      return prev
+    })
+
+    notify('Question deleted from queue.')
+  }
+
+  const deleteQuestion = (index: number) => {
+    updateQuestionsWithHistory(prev => {
+      const updated = prev.filter((_, i) => i !== index)
+      return updated.map((q, i) => ({ ...q, id: i + 1 }))
+    })
+    if (inspectingIndex !== null) {
+      setInspectingIndex(prev => (prev !== null && prev >= questions.length - 1 ? Math.max(0, questions.length - 2) : prev))
+    }
+    notify('Question removed from queue.')
   }
 
   const clearAllQuestions = () => {
-    setQuestions([])
+    updateQuestionsWithHistory([])
     setInspectingIndex(null)
     notify('Question queue cleared.')
   }
@@ -997,12 +1059,14 @@ export default function Page() {
         <FullscreenInspectorModal
           questions={questions}
           currentIndex={inspectingIndex}
+          canUndo={historyStack.length > 0}
+          onUndo={handleUndo}
           onClose={() => setInspectingIndex(null)}
           onIndexChange={setInspectingIndex}
           onSubjectChange={handleChangeQuestionSubject}
           onSplit={(q, idx) => setSplittingQuestion({ question: q, index: idx })}
           onMerge={handleMergeWithNext}
-          onDelete={deleteQuestion}
+          onDelete={handleDeleteFromInspector}
         />
       )}
 
@@ -1138,9 +1202,9 @@ export default function Page() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Confirmation Modal for Draft/Test Records */}
       {deleteConfirmation && (
-        <div className="modal-overlay" onClick={() => setDeleteConfirmation(null)}>
+        <div className="modal-overlay" onClick={() => setDeleteConfirmation(null)} style={{ zIndex: 999999 }}>
           <motion.div 
             initial={{ opacity: 0, scale: 0.96 }} 
             animate={{ opacity: 1, scale: 1 }} 
@@ -1154,7 +1218,7 @@ export default function Page() {
               </div>
               <button className="icon-button" onClick={() => setDeleteConfirmation(null)}><X /></button>
             </div>
-            <p>Are you sure you want to delete this {deleteConfirmation.type === 'draft' ? 'saved test' : deleteConfirmation.type === 'question' ? 'question' : 'test record'}? This action cannot be undone.</p>
+            <p>Are you sure you want to delete this {deleteConfirmation.type === 'draft' ? 'saved test' : 'test record'}? This action cannot be undone.</p>
             <div className="modal-actions">
               <button className="secondary-button" onClick={() => setDeleteConfirmation(null)}>Cancel</button>
               <button 
@@ -1293,6 +1357,8 @@ export default function Page() {
                 onResetZoom={resetZoom}
                 onCropComplete={handleCropComplete}
                 questions={questions}
+                canUndo={historyStack.length > 0}
+                onUndo={handleUndo}
                 onDeleteQuestion={deleteQuestion}
                 onClearQuestions={clearAllQuestions}
                 onSplitQuestion={(q: Question, idx: number) => setSplittingQuestion({ question: q, index: idx })}
@@ -1730,10 +1796,11 @@ function PDFPage({ pageData, totalPages, onCrop }: { pageData: any, totalPages: 
   )
 }
 
-// Studio Component (PDF Upload, Auto Detect + Manual Crop with Split, Merge, Quick Range Tag & Fullscreen Preview)
+// Studio Component (PDF Upload, Auto Detect + Manual Crop with Split, Merge, Range Tag, Fullscreen & Undo)
 function Studio({ 
   notify, setModal, loading, error, totalPages, zoom, pagesData, pdfDoc,
   onPDFUpload, onZoomChange, onResetZoom, onCropComplete, questions, 
+  canUndo, onUndo,
   onDeleteQuestion, onClearQuestions, onSplitQuestion, onMergeWithNext, onInspectQuestion,
   currentFileName, activeSubject, onSubjectChange, onLaunchExam,
   onRunAutoCrop, isAutoCropping, pageStart, pageEnd, onPageStartChange, onPageEndChange,
@@ -1806,6 +1873,21 @@ function Studio({
               {isAutoCropping ? <><Loader2 className="animate-spin" /> Detecting...</> : <><Zap /> ⚡ Auto Detect ({pageStart}–{pageEnd})</>}
             </button>
           )}
+
+          {/* Dedicated Toolbar Undo Button */}
+          <button 
+            className="secondary-button"
+            onClick={onUndo}
+            disabled={!canUndo}
+            title="Undo last action"
+            style={{
+              opacity: canUndo ? 1 : 0.4,
+              color: '#38bdf8',
+              borderColor: canUndo ? 'rgba(56, 189, 248, 0.4)' : 'rgba(255,255,255,0.08)'
+            }}
+          >
+            <Undo2 size={14} /> Undo
+          </button>
 
           {questions.length > 0 && (
             <button 
@@ -2102,7 +2184,7 @@ function Studio({
                         >
                           <Scissors size={14} />
                         </button>
-                        <button className="icon-button subtle" onClick={() => onDeleteQuestion(originalIndex)}>
+                        <button className="icon-button subtle" onClick={() => deleteQuestion(originalIndex)}>
                           <Trash2 />
                         </button>
                       </div>
