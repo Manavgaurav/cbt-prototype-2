@@ -8,7 +8,8 @@ import {
   FileArchive, FileText, Flame, FolderOpen, Gauge, GraduationCap, Grid2X2,
   HelpCircle, History, LayoutDashboard, ListChecks, Menu, MoreHorizontal, PanelLeft,
   Pencil, Play, Plus, RotateCcw, Search, Settings2, Target, Trash2,
-  UploadCloud, UserRound, X, Zap, ZoomIn, ZoomOut, Save as SaveIcon, Star, Flag, Atom
+  UploadCloud, UserRound, X, Zap, ZoomIn, ZoomOut, Save as SaveIcon, Star, Flag, Atom,
+  Scissors, SlidersHorizontal, Loader2
 } from 'lucide-react'
 
 // Import our custom utilities and components
@@ -18,6 +19,7 @@ import {
   getDraftTests, saveDraftTests, clearDraftTests, getInitials, formatDate, generateId 
 } from '@/lib/storage'
 import { usePDF, useCropSelection } from '@/lib/pdf-utils'
+import { processPDFAutoCrop } from '@/lib/auto-crop'
 import { ExamTimer } from '@/components/exam/ExamTimer'
 import { QuestionPalette } from '@/components/exam/QuestionPalette'
 import { AnswerInputs } from '@/components/exam/AnswerInputs'
@@ -47,6 +49,141 @@ function StatCard({ icon: Icon, label, value, detail, accent }: any) {
   </motion.div>
 }
 
+// Interactive Split Modal for merged questions (e.g. Q5 + Q6)
+function SplitModal({ question, onClose, onSplit }: { question: Question, onClose: () => void, onSplit: (img1: string, img2: string) => void }) {
+  const [splitPercent, setSplitPercent] = useState(50)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const imgRef = useRef<HTMLImageElement>(null)
+
+  const handleApplySplit = () => {
+    if (!imgRef.current) return
+    setIsProcessing(true)
+
+    const img = imgRef.current
+    const naturalWidth = img.naturalWidth || 800
+    const naturalHeight = img.naturalHeight || 600
+
+    const splitY = Math.round((naturalHeight * splitPercent) / 100)
+
+    // Part 1: Top Question
+    const canvas1 = document.createElement('canvas')
+    canvas1.width = naturalWidth
+    canvas1.height = splitY
+    const ctx1 = canvas1.getContext('2d')
+    if (ctx1) {
+      ctx1.drawImage(img, 0, 0, naturalWidth, splitY, 0, 0, naturalWidth, splitY)
+    }
+
+    // Part 2: Bottom Question
+    const canvas2 = document.createElement('canvas')
+    canvas2.width = naturalWidth
+    canvas2.height = naturalHeight - splitY
+    const ctx2 = canvas2.getContext('2d')
+    if (ctx2) {
+      ctx2.drawImage(img, 0, splitY, naturalWidth, naturalHeight - splitY, 0, 0, naturalWidth, naturalHeight - splitY)
+    }
+
+    const dataUrl1 = canvas1.toDataURL('image/png')
+    const dataUrl2 = canvas2.toDataURL('image/png')
+
+    onSplit(dataUrl1, dataUrl2)
+    setIsProcessing(false)
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 9999 }}>
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }} 
+        animate={{ opacity: 1, scale: 1 }} 
+        className="modal glass" 
+        style={{ maxWidth: '750px', width: '92%' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header">
+          <div>
+            <div className="eyebrow" style={{ color: '#c084fc' }}>QUESTION SEPARATION TOOL</div>
+            <h2>Split Merged Question</h2>
+          </div>
+          <button className="icon-button" onClick={onClose}><X /></button>
+        </div>
+        <p style={{ fontSize: '13px', color: '#94a3b8', margin: '4px 0 16px 0' }}>
+          Drag the cut line to place it exactly between the two questions. This will instantly split this card into 2 individual question entries in your queue.
+        </p>
+
+        {/* Visual Splitter Container */}
+        <div style={{ position: 'relative', border: '1px solid rgba(139, 92, 246, 0.3)', borderRadius: '8px', overflow: 'hidden', background: '#0b0f19', textAlign: 'center' }}>
+          <img 
+            ref={imgRef} 
+            src={question.img} 
+            alt="Question to split" 
+            style={{ width: '100%', display: 'block', maxHeight: '55vh', objectFit: 'contain' }}
+          />
+
+          {/* Cut Line Indicator */}
+          <div 
+            style={{
+              position: 'absolute',
+              top: `${splitPercent}%`,
+              left: 0,
+              right: 0,
+              height: '3px',
+              background: '#06b6d4',
+              boxShadow: '0 0 10px #06b6d4',
+              pointerEvents: 'none',
+              transform: 'translateY(-50%)',
+              zIndex: 5
+            }}
+          >
+            <span style={{
+              position: 'absolute',
+              right: '12px',
+              top: '-12px',
+              background: '#06b6d4',
+              color: '#000',
+              fontWeight: 800,
+              fontSize: '10px',
+              padding: '2px 8px',
+              borderRadius: '999px',
+              textTransform: 'uppercase'
+            }}>
+              Cut Line ({splitPercent}%)
+            </span>
+          </div>
+        </div>
+
+        {/* Slider control */}
+        <div style={{ margin: '20px 0 10px 0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#cbd5e1', marginBottom: '8px' }}>
+            <span>Top Part (Question A)</span>
+            <span style={{ color: '#06b6d4', fontWeight: 700 }}>Cut Position: {splitPercent}%</span>
+            <span>Bottom Part (Question B)</span>
+          </div>
+          <input 
+            type="range" 
+            min="5" 
+            max="95" 
+            value={splitPercent} 
+            onChange={(e) => setSplitPercent(Number(e.target.value))}
+            style={{ width: '100%', accentColor: '#06b6d4', cursor: 'pointer' }}
+          />
+        </div>
+
+        <div className="modal-actions" style={{ marginTop: '16px' }}>
+          <button className="secondary-button" onClick={onClose}>Cancel</button>
+          <button 
+            className="primary-button" 
+            onClick={handleApplySplit} 
+            disabled={isProcessing}
+            style={{ background: 'linear-gradient(135deg, #06b6d4, #3b82f6)' }}
+          >
+            <Scissors size={16} /> Split into 2 Questions
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
 export default function Page() {
   // UI State
   const [active, setActive] = useState('Dashboard')
@@ -56,6 +193,9 @@ export default function Page() {
   const [showProfile, setShowProfile] = useState(false)
   const [modal, setModal] = useState<string | null>(null)
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ type: 'draft' | 'question' | 'test', id: string, onConfirm: () => void } | null>(null)
+
+  // Split Modal State
+  const [splittingQuestion, setSplittingQuestion] = useState<{ question: Question, index: number } | null>(null)
 
   // User Profile State
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
@@ -74,6 +214,7 @@ export default function Page() {
   const { pdfDoc, loading, error, totalPages, zoom, pagesData, loadPDF, setZoom, resetZoom, clearPDF } = usePDF()
   const [questions, setQuestions] = useState<Question[]>([])
   const [currentFileName, setCurrentFileName] = useState('')
+  const [isAutoCropping, setIsAutoCropping] = useState(false)
 
   // Exam State
   const [examData, setExamData] = useState<Question[]>([])
@@ -145,7 +286,50 @@ export default function Page() {
     
     setCurrentFileName(file.name.replace(/\.pdf$/i, ''))
     await loadPDF(file)
-    notify(`PDF loaded! ${totalPages} pages rendered.`)
+    notify(`PDF loaded! ${totalPages || 'Multiple'} pages ready.`)
+  }
+
+  // Auto Crop Action
+  const handleRunAutoCrop = async () => {
+    if (!pdfDoc) {
+      notify('Please upload a PDF document first!')
+      return
+    }
+
+    try {
+      setIsAutoCropping(true)
+      notify('Running smart auto-detection on PDF...')
+      const slices = await processPDFAutoCrop(pdfDoc)
+
+      if (!slices || slices.length === 0) {
+        toast.error('No question markers detected. You can still crop manually!')
+        setIsAutoCropping(false)
+        return
+      }
+
+      const newQuestions: Question[] = slices.map((slice: any, idx: number) => ({
+        id: questions.length + idx + 1,
+        img: slice.dataUrl,
+        page: slice.pageNum || 1,
+        type: 'single',
+        choice: null,
+        visited: false,
+        markedReview: false,
+        timeSec: 0,
+        eval: 'unattempted',
+        awardedMarks: 0,
+        officialAnswer: null,
+        subject: activeCropSubjectRef.current
+      }))
+
+      setQuestions(prev => [...prev, ...newQuestions])
+      notify(`Auto-crop complete! ${newQuestions.length} questions captured.`)
+    } catch (err: any) {
+      console.error(err)
+      toast.error('Auto crop encountered an issue. You can crop manually!')
+    } finally {
+      setIsAutoCropping(false)
+    }
   }
 
   // Question Management
@@ -167,6 +351,32 @@ export default function Page() {
     
     setQuestions(prev => [...prev, newQuestion])
     notify(`Q#${newQuestion.id} captured into [${newQuestion.subject.toUpperCase()}]!`)
+  }
+
+  // Execute Question Split
+  const handleExecuteSplit = (img1: string, img2: string) => {
+    if (!splittingQuestion) return
+    const { index, question } = splittingQuestion
+
+    const part1: Question = {
+      ...question,
+      img: img1
+    }
+
+    const part2: Question = {
+      ...question,
+      id: question.id + 1,
+      img: img2
+    }
+
+    setQuestions(prev => {
+      const updated = [...prev]
+      updated.splice(index, 1, part1, part2)
+      return updated.map((q, i) => ({ ...q, id: i + 1 }))
+    })
+
+    setSplittingQuestion(null)
+    notify('Successfully split into 2 questions!')
   }
 
   const deleteQuestion = (index: number) => {
@@ -343,7 +553,7 @@ export default function Page() {
     notify('Exam submitted! Please import answer key for evaluation.')
   }
 
-  // Evaluation Management - Robustly accepts payload from AnswerKeyImport
+  // Evaluation Management
   const handleEvaluationComplete = (payload?: any) => {
     setShowAnswerKeyImport(false)
     
@@ -448,13 +658,21 @@ export default function Page() {
     }
   }
 
-  // Universal attempt check
   const answeredCount = examData.filter(q => hasAttempted(q.choice)).length
 
   return (
     <div className="app-shell">
       <Toaster theme="dark" position="bottom-right" toastOptions={{ style: { background: '#111827', color: '#f8fafc', border: '1px solid #263244' } }} />
       
+      {/* Question Split / Edit Modal */}
+      {splittingQuestion && (
+        <SplitModal 
+          question={splittingQuestion.question} 
+          onClose={() => setSplittingQuestion(null)} 
+          onSplit={handleExecuteSplit} 
+        />
+      )}
+
       {/* Onboarding Modal */}
       {showOnboarding && (
         <div className="modal-overlay" onClick={() => setShowOnboarding(false)}>
@@ -727,6 +945,7 @@ export default function Page() {
                 totalPages={totalPages}
                 zoom={zoom}
                 pagesData={pagesData}
+                pdfDoc={pdfDoc}
                 onPDFUpload={handlePDFUpload}
                 onZoomChange={setZoom}
                 onResetZoom={resetZoom}
@@ -734,10 +953,13 @@ export default function Page() {
                 questions={questions}
                 onDeleteQuestion={deleteQuestion}
                 onClearQuestions={clearAllQuestions}
+                onSplitQuestion={(q: Question, idx: number) => setSplittingQuestion({ question: q, index: idx })}
                 currentFileName={currentFileName}
                 activeSubject={activeCropSubject}
                 onSubjectChange={setActiveCropSubject}
                 onLaunchExam={launchExam}
+                onRunAutoCrop={handleRunAutoCrop}
+                isAutoCropping={isAutoCropping}
               />
             )}
             
@@ -1155,11 +1377,12 @@ function PDFPage({ pageData, totalPages, onCrop }: { pageData: any, totalPages: 
   )
 }
 
-// Studio Component (PDF Upload & Crop with Subject Tabs)
+// Studio Component (PDF Upload, Auto Detect + Manual Crop with Split Support)
 function Studio({ 
-  notify, setModal, loading, error, totalPages, zoom, pagesData, 
+  notify, setModal, loading, error, totalPages, zoom, pagesData, pdfDoc,
   onPDFUpload, onZoomChange, onResetZoom, onCropComplete, questions, 
-  onDeleteQuestion, onClearQuestions, currentFileName, activeSubject, onSubjectChange, onLaunchExam 
+  onDeleteQuestion, onClearQuestions, onSplitQuestion, currentFileName, activeSubject, onSubjectChange, onLaunchExam,
+  onRunAutoCrop, isAutoCropping
 }: any) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [filterSubject, setFilterSubject] = useState<'all' | Subject>('all')
@@ -1192,6 +1415,19 @@ function Studio({
           <p>{currentFileName || 'No PDF loaded'} <Pill color="cyan">{totalPages} pages</Pill></p>
         </div>
         <div className="heading-actions">
+          {totalPages > 0 && (
+            <button 
+              className="primary-button"
+              onClick={onRunAutoCrop}
+              disabled={isAutoCropping}
+              style={{
+                background: 'linear-gradient(135deg, #06b6d4, #8b5cf6)',
+                boxShadow: '0 0 15px rgba(6, 182, 212, 0.4)'
+              }}
+            >
+              {isAutoCropping ? <><Loader2 className="animate-spin" /> Auto Detecting...</> : <><Zap /> ⚡ Auto Detect All</>}
+            </button>
+          )}
           <button className="secondary-button" onClick={onClearQuestions}><RotateCcw /> Clear queue</button>
           <button className="secondary-button" onClick={() => setModal('save-draft')}><SaveIcon /> Save draft</button>
           {questions.length > 0 && (
@@ -1203,7 +1439,7 @@ function Studio({
       {/* Top Subject Selector for Ingestion */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', background: 'rgba(18, 18, 30, 0.7)', border: '1px solid rgba(139, 92, 246, 0.25)', borderRadius: '14px', padding: '8px 16px', backdropFilter: 'blur(10px)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.08em', color: '#a78bfa', textTransform: 'uppercase' }}>Active Crop Section:</span>
+          <span style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.08em', color: '#a78bfa', textTransform: 'uppercase' }}>Active Section:</span>
           {(['physics', 'chemistry', 'maths'] as Subject[]).map((subj) => (
             <button
               key={subj}
@@ -1228,7 +1464,7 @@ function Studio({
           ))}
         </div>
         <div style={{ fontSize: '11px', color: '#64748b' }}>
-          Questions cropped now will be tagged as <b style={{ color: '#c084fc', textTransform: 'uppercase' }}>{activeSubject}</b>
+          New questions will be tagged as <b style={{ color: '#c084fc', textTransform: 'uppercase' }}>{activeSubject}</b>
         </div>
       </div>
 
@@ -1268,7 +1504,29 @@ function Studio({
       ) : (
         <div className="studio-layout" style={{ height: 'calc(100vh - 250px)', minHeight: '400px', overflow: 'hidden' }}>
           <div className="pdf-canvas" style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden' }}>
-            <div className="page-ruler mono" style={{ position: 'sticky', top: 0, zIndex: 10, background: 'rgba(9,9,11,0.9)', padding: '4px 0', marginBottom: '10px' }}>{totalPages} <span>•</span> PDF loaded</div>
+            <div className="page-ruler mono" style={{ position: 'sticky', top: 0, zIndex: 10, background: 'rgba(9,9,11,0.9)', padding: '6px 12px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>{totalPages} PAGES LOADED • DRAG TO MANUAL CROP</span>
+              <button 
+                onClick={onRunAutoCrop}
+                disabled={isAutoCropping}
+                style={{
+                  background: 'rgba(6, 182, 212, 0.2)',
+                  border: '1px solid #06b6d4',
+                  color: '#67e8f9',
+                  borderRadius: '6px',
+                  padding: '4px 10px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                {isAutoCropping ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />} 
+                ⚡ Auto Crop Entire Paper
+              </button>
+            </div>
             <div className="pdf-pages-container">
               {pagesData.map((pageData: any) => (
                 <PDFPage 
@@ -1316,28 +1574,40 @@ function Studio({
                 <div className="empty-state">
                   <div className="empty-icon">✂</div>
                   <b>No questions here</b>
-                  <span>Drag box on PDF to capture for {activeSubject.toUpperCase()}.</span>
+                  <span>Click "⚡ Auto Detect" or drag on PDF to crop.</span>
                 </div>
               ) : (
-                filteredQuestions.map((q: Question, index: number) => (
-                  <div key={q.id} className="rail-crop-card">
-                    <div className="rail-crop-head">
-                      <span className="rail-crop-title">Q#{q.id < 10 ? '0' : ''}{q.id} • {(q.subject || 'physics').toUpperCase()}</span>
-                      <span className="rail-crop-page">Page {q.page}</span>
+                filteredQuestions.map((q: Question, index: number) => {
+                  const originalIndex = questions.findIndex((item: Question) => item.id === q.id)
+                  return (
+                    <div key={q.id} className="rail-crop-card">
+                      <div className="rail-crop-head">
+                        <span className="rail-crop-title">Q#{q.id < 10 ? '0' : ''}{q.id} • {(q.subject || 'physics').toUpperCase()}</span>
+                        <span className="rail-crop-page">Page {q.page}</span>
+                      </div>
+                      <div className="rail-crop-img-wrap">
+                        <img src={q.img} alt={`Q${q.id}`} />
+                      </div>
+                      <div className="rail-crop-actions">
+                        {/* Split Button for questions that merged together */}
+                        <button 
+                          className="icon-button subtle" 
+                          onClick={() => onSplitQuestion(q, originalIndex)}
+                          title="Split merged question (e.g. Q5 + Q6)"
+                          style={{ color: '#06b6d4' }}
+                        >
+                          <Scissors size={14} />
+                        </button>
+                        <button className="icon-button subtle" onClick={() => notify(`Question #${q.id} (${q.subject || 'physics'})`)}>
+                          <ZoomIn />
+                        </button>
+                        <button className="icon-button subtle" onClick={() => onDeleteQuestion(originalIndex)}>
+                          <Trash2 />
+                        </button>
+                      </div>
                     </div>
-                    <div className="rail-crop-img-wrap">
-                      <img src={q.img} alt={`Q${q.id}`} />
-                    </div>
-                    <div className="rail-crop-actions">
-                      <button className="icon-button subtle" onClick={() => notify(`Question #${q.id} (${q.subject || 'physics'})`)}>
-                        <ZoomIn />
-                      </button>
-                      <button className="icon-button subtle" onClick={() => onDeleteQuestion(questions.findIndex((item: Question) => item.id === q.id))}>
-                        <Trash2 />
-                      </button>
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </div>
@@ -1403,8 +1673,6 @@ function ExamArena({
   duration, answeredCount, userProfile, examActive, activeSubject, onSubjectChange 
 }: any) {
   const currentQuestion = examData[currentIndex]
-
-  const subjectQuestions = examData.filter((q: Question) => (q.subject || 'physics') === activeSubject)
 
   if (!currentQuestion) return null
 
