@@ -216,6 +216,17 @@ export default function Page() {
   const [currentFileName, setCurrentFileName] = useState('')
   const [isAutoCropping, setIsAutoCropping] = useState(false)
 
+  // Page Range Filter State for Auto Crop
+  const [pageStart, setPageStart] = useState<number>(1)
+  const [pageEnd, setPageEnd] = useState<number>(1)
+
+  useEffect(() => {
+    if (totalPages > 0) {
+      setPageStart(1)
+      setPageEnd(totalPages)
+    }
+  }, [totalPages])
+
   // Exam State
   const [examData, setExamData] = useState<Question[]>([])
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
@@ -289,7 +300,7 @@ export default function Page() {
     notify(`PDF loaded! ${totalPages || 'Multiple'} pages ready.`)
   }
 
-  // Auto Crop Action
+  // Auto Crop Action with Page Range Filtering
   const handleRunAutoCrop = async () => {
     if (!pdfDoc) {
       notify('Please upload a PDF document first!')
@@ -298,7 +309,8 @@ export default function Page() {
 
     try {
       setIsAutoCropping(true)
-      notify('Running smart auto-detection on PDF...')
+      notify(`Auto-detecting questions from Page ${pageStart} to ${pageEnd}...`)
+      
       const slices = await processPDFAutoCrop(pdfDoc)
 
       if (!slices || slices.length === 0) {
@@ -307,10 +319,22 @@ export default function Page() {
         return
       }
 
-      const newQuestions: Question[] = slices.map((slice: any, idx: number) => ({
+      // Filter out solution pages based on user-selected page range
+      const filteredSlices = slices.filter((s: any) => {
+        const pageNum = s.pageNum || s.page || 1
+        return pageNum >= pageStart && pageNum <= pageEnd
+      })
+
+      if (filteredSlices.length === 0) {
+        toast.error(`No questions detected in pages ${pageStart} to ${pageEnd}. Check page range!`)
+        setIsAutoCropping(false)
+        return
+      }
+
+      const newQuestions: Question[] = filteredSlices.map((slice: any, idx: number) => ({
         id: questions.length + idx + 1,
         img: slice.dataUrl,
-        page: slice.pageNum || 1,
+        page: slice.pageNum || slice.page || pageStart,
         type: 'single',
         choice: null,
         visited: false,
@@ -323,7 +347,7 @@ export default function Page() {
       }))
 
       setQuestions(prev => [...prev, ...newQuestions])
-      notify(`Auto-crop complete! ${newQuestions.length} questions captured.`)
+      notify(`Success! ${newQuestions.length} questions captured from pages ${pageStart}–${pageEnd}.`)
     } catch (err: any) {
       console.error(err)
       toast.error('Auto crop encountered an issue. You can crop manually!')
@@ -960,6 +984,10 @@ export default function Page() {
                 onLaunchExam={launchExam}
                 onRunAutoCrop={handleRunAutoCrop}
                 isAutoCropping={isAutoCropping}
+                pageStart={pageStart}
+                pageEnd={pageEnd}
+                onPageStartChange={setPageStart}
+                onPageEndChange={setPageEnd}
               />
             )}
             
@@ -1377,12 +1405,12 @@ function PDFPage({ pageData, totalPages, onCrop }: { pageData: any, totalPages: 
   )
 }
 
-// Studio Component (PDF Upload, Auto Detect + Manual Crop with Split Support)
+// Studio Component (PDF Upload, Auto Detect + Manual Crop with Split & Page Range)
 function Studio({ 
   notify, setModal, loading, error, totalPages, zoom, pagesData, pdfDoc,
   onPDFUpload, onZoomChange, onResetZoom, onCropComplete, questions, 
   onDeleteQuestion, onClearQuestions, onSplitQuestion, currentFileName, activeSubject, onSubjectChange, onLaunchExam,
-  onRunAutoCrop, isAutoCropping
+  onRunAutoCrop, isAutoCropping, pageStart, pageEnd, onPageStartChange, onPageEndChange
 }: any) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [filterSubject, setFilterSubject] = useState<'all' | Subject>('all')
@@ -1414,7 +1442,30 @@ function Studio({
           <h1>Crop with intent<span className="gradient-text">.</span></h1>
           <p>{currentFileName || 'No PDF loaded'} <Pill color="cyan">{totalPages} pages</Pill></p>
         </div>
-        <div className="heading-actions">
+        <div className="heading-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {totalPages > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(15, 23, 42, 0.8)', padding: '4px 10px', borderRadius: '10px', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+              <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, letterSpacing: '0.05em' }}>PAGES:</span>
+              <input 
+                type="number" 
+                min={1} 
+                max={pageEnd} 
+                value={pageStart} 
+                onChange={(e) => onPageStartChange(Math.max(1, Number(e.target.value)))}
+                style={{ width: '42px', background: '#0b0f19', border: '1px solid #334155', color: '#38bdf8', borderRadius: '6px', textAlign: 'center', fontSize: '12px', padding: '3px', fontWeight: 700 }}
+              />
+              <span style={{ fontSize: '11px', color: '#64748b' }}>to</span>
+              <input 
+                type="number" 
+                min={pageStart} 
+                max={totalPages || 1} 
+                value={pageEnd} 
+                onChange={(e) => onPageEndChange(Math.min(totalPages, Number(e.target.value)))}
+                style={{ width: '42px', background: '#0b0f19', border: '1px solid #334155', color: '#38bdf8', borderRadius: '6px', textAlign: 'center', fontSize: '12px', padding: '3px', fontWeight: 700 }}
+              />
+            </div>
+          )}
+
           {totalPages > 0 && (
             <button 
               className="primary-button"
@@ -1425,9 +1476,10 @@ function Studio({
                 boxShadow: '0 0 15px rgba(6, 182, 212, 0.4)'
               }}
             >
-              {isAutoCropping ? <><Loader2 className="animate-spin" /> Auto Detecting...</> : <><Zap /> ⚡ Auto Detect All</>}
+              {isAutoCropping ? <><Loader2 className="animate-spin" /> Detecting...</> : <><Zap /> ⚡ Auto Detect ({pageStart}–{pageEnd})</>}
             </button>
           )}
+
           <button className="secondary-button" onClick={onClearQuestions}><RotateCcw /> Clear queue</button>
           <button className="secondary-button" onClick={() => setModal('save-draft')}><SaveIcon /> Save draft</button>
           {questions.length > 0 && (
@@ -1504,28 +1556,31 @@ function Studio({
       ) : (
         <div className="studio-layout" style={{ height: 'calc(100vh - 250px)', minHeight: '400px', overflow: 'hidden' }}>
           <div className="pdf-canvas" style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden' }}>
-            <div className="page-ruler mono" style={{ position: 'sticky', top: 0, zIndex: 10, background: 'rgba(9,9,11,0.9)', padding: '6px 12px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="page-ruler mono" style={{ position: 'sticky', top: 0, zIndex: 10, background: 'rgba(9,9,11,0.92)', padding: '6px 14px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
               <span>{totalPages} PAGES LOADED • DRAG TO MANUAL CROP</span>
-              <button 
-                onClick={onRunAutoCrop}
-                disabled={isAutoCropping}
-                style={{
-                  background: 'rgba(6, 182, 212, 0.2)',
-                  border: '1px solid #06b6d4',
-                  color: '#67e8f9',
-                  borderRadius: '6px',
-                  padding: '4px 10px',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                {isAutoCropping ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />} 
-                ⚡ Auto Crop Entire Paper
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>Filter: Page {pageStart} to {pageEnd}</span>
+                <button 
+                  onClick={onRunAutoCrop}
+                  disabled={isAutoCropping}
+                  style={{
+                    background: 'rgba(6, 182, 212, 0.2)',
+                    border: '1px solid #06b6d4',
+                    color: '#67e8f9',
+                    borderRadius: '6px',
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  {isAutoCropping ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />} 
+                  ⚡ Auto Detect Questions
+                </button>
+              </div>
             </div>
             <div className="pdf-pages-container">
               {pagesData.map((pageData: any) => (
