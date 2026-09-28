@@ -9,7 +9,7 @@ import {
   HelpCircle, History, LayoutDashboard, ListChecks, Menu, MoreHorizontal, PanelLeft,
   Pencil, Play, Plus, RotateCcw, Search, Settings2, Target, Trash2,
   UploadCloud, UserRound, X, Zap, ZoomIn, ZoomOut, Save as SaveIcon, Star, Flag, Atom,
-  Scissors, SlidersHorizontal, Loader2, Link2, CheckCheck
+  Scissors, SlidersHorizontal, Loader2, Link2, CheckCheck, Maximize2, Eye
 } from 'lucide-react'
 
 // Import our custom utilities and components
@@ -125,7 +125,7 @@ function SplitModal({ question, onClose, onSplit }: { question: Question, onClos
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 9999 }}>
+    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 99999 }}>
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }} 
         animate={{ opacity: 1, scale: 1 }} 
@@ -218,6 +218,194 @@ function SplitModal({ question, onClose, onSplit }: { question: Question, onClos
   )
 }
 
+// Fullscreen Question Inspector Modal with Navigation & In-place Actions
+function FullscreenInspectorModal({
+  questions,
+  currentIndex,
+  onClose,
+  onIndexChange,
+  onSubjectChange,
+  onSplit,
+  onMerge,
+  onDelete
+}: {
+  questions: Question[],
+  currentIndex: number,
+  onClose: () => void,
+  onIndexChange: (idx: number) => void,
+  onSubjectChange: (idx: number, subj: Subject) => void,
+  onSplit: (q: Question, idx: number) => void,
+  onMerge: (idx: number) => void,
+  onDelete: (idx: number) => void
+}) {
+  const currentQ = questions[currentIndex]
+
+  // Keyboard navigation support
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight' && currentIndex < questions.length - 1) {
+        onIndexChange(currentIndex + 1)
+      } else if (e.key === 'ArrowLeft' && currentIndex > 0) {
+        onIndexChange(currentIndex - 1)
+      } else if (e.key === 'Escape') {
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [currentIndex, questions.length, onIndexChange, onClose])
+
+  if (!currentQ) return null
+
+  const isLast = currentIndex >= questions.length - 1
+  const isFirst = currentIndex === 0
+  const subjColor = currentQ.subject === 'physics' ? '#a855f7' : currentQ.subject === 'chemistry' ? '#06b6d4' : '#10b981'
+
+  return (
+    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 99990, padding: '16px' }}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.98 }}
+        className="modal glass"
+        style={{
+          maxWidth: '1200px',
+          width: '96%',
+          height: '92vh',
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '16px 20px',
+          background: 'rgba(10, 10, 18, 0.95)',
+          border: '1px solid rgba(139, 92, 246, 0.35)'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Top Control Bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <span style={{ fontSize: '18px', fontWeight: 800, color: '#f8fafc' }}>
+              Q#{currentQ.id} <span style={{ fontSize: '13px', color: '#64748b' }}>({currentIndex + 1} of {questions.length})</span>
+            </span>
+            <span style={{ fontSize: '11px', background: 'rgba(255,255,255,0.06)', padding: '3px 8px', borderRadius: '4px', color: '#94a3b8' }}>
+              Page {currentQ.page}
+            </span>
+            {/* Subject Selector */}
+            <div style={{ display: 'flex', gap: '4px', marginLeft: '6px' }}>
+              {(['physics', 'chemistry', 'maths'] as Subject[]).map((subj) => (
+                <button
+                  key={subj}
+                  onClick={() => onSubjectChange(currentIndex, subj)}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    border: currentQ.subject === subj ? `1px solid ${subjColor}` : '1px solid rgba(255,255,255,0.08)',
+                    background: currentQ.subject === subj ? `${subjColor}25` : 'transparent',
+                    color: currentQ.subject === subj ? '#ffffff' : '#94a3b8'
+                  }}
+                >
+                  {subj}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Action buttons (Split, Merge, Delete, Close) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              className="secondary-button"
+              onClick={() => onSplit(currentQ, currentIndex)}
+              title="Split this question into two parts"
+              style={{ color: '#06b6d4', borderColor: 'rgba(6, 182, 212, 0.4)' }}
+            >
+              <Scissors size={14} /> Split (Cut)
+            </button>
+
+            {!isLast && (
+              <button
+                className="secondary-button"
+                onClick={() => onMerge(currentIndex)}
+                title="Merge with next question below"
+                style={{ color: '#a855f7', borderColor: 'rgba(168, 85, 247, 0.4)' }}
+              >
+                <Link2 size={14} /> Merge with Next
+              </button>
+            )}
+
+            <button
+              className="secondary-button"
+              onClick={() => onDelete(currentIndex)}
+              style={{ color: '#f43f5e', borderColor: 'rgba(244, 63, 94, 0.4)' }}
+            >
+              <Trash2 size={14} /> Delete
+            </button>
+
+            <button className="icon-button" onClick={onClose} style={{ marginLeft: '6px' }}>
+              <X />
+            </button>
+          </div>
+        </div>
+
+        {/* Center Large Image View Area */}
+        <div style={{
+          flex: 1,
+          overflowY: 'auto',
+          margin: '14px 0',
+          padding: '16px',
+          background: '#040711',
+          borderRadius: '10px',
+          border: '1px solid rgba(255, 255, 255, 0.05)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'relative'
+        }}>
+          <img
+            src={currentQ.img}
+            alt={`Question ${currentQ.id}`}
+            style={{
+              maxWidth: '100%',
+              maxHeight: '100%',
+              objectFit: 'contain',
+              background: '#ffffff',
+              borderRadius: '6px',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.6)'
+            }}
+          />
+        </div>
+
+        {/* Bottom Full Navigation Controls */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '10px' }}>
+          <button
+            className="secondary-button"
+            onClick={() => onIndexChange(currentIndex - 1)}
+            disabled={isFirst}
+            style={{ opacity: isFirst ? 0.35 : 1 }}
+          >
+            <ChevronLeft /> Previous Question (←)
+          </button>
+
+          <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+            Tip: Press <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#fff' }}>←</kbd> and <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#fff' }}>→</kbd> on keyboard to quickly flip through questions
+          </span>
+
+          <button
+            className="primary-button"
+            onClick={() => onIndexChange(currentIndex + 1)}
+            disabled={isLast}
+            style={{ opacity: isLast ? 0.35 : 1, background: 'linear-gradient(135deg, #7c3aed, #9333ea)' }}
+          >
+            Next Question (→) <ChevronRight />
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
 export default function Page() {
   // UI State
   const [active, setActive] = useState('Dashboard')
@@ -230,6 +418,9 @@ export default function Page() {
 
   // Split Modal State
   const [splittingQuestion, setSplittingQuestion] = useState<{ question: Question, index: number } | null>(null)
+
+  // Fullscreen Inspector State
+  const [inspectingIndex, setInspectingIndex] = useState<number | null>(null)
 
   // User Profile State
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
@@ -425,6 +616,16 @@ export default function Page() {
     notify(`Q#${bulkFromQ} to Q#${bulkToQ} set to ${targetSubj.toUpperCase()}!`)
   }
 
+  // Change individual question subject
+  const handleChangeQuestionSubject = (index: number, subj: Subject) => {
+    setQuestions(prev => {
+      const next = [...prev]
+      next[index] = { ...next[index], subject: subj }
+      return next
+    })
+    notify(`Q#${index + 1} set to ${subj.toUpperCase()}`)
+  }
+
   // Merge Question with the Next Question in Queue
   const handleMergeWithNext = async (index: number) => {
     if (index >= questions.length - 1) {
@@ -511,6 +712,9 @@ export default function Page() {
           const updated = prev.filter((_, i) => i !== index)
           return updated.map((q, i) => ({ ...q, id: i + 1 }))
         })
+        if (inspectingIndex !== null) {
+          setInspectingIndex(prev => (prev !== null && prev >= questions.length - 1 ? Math.max(0, questions.length - 2) : prev))
+        }
         notify('Question removed from queue.')
       }
     })
@@ -518,6 +722,7 @@ export default function Page() {
 
   const clearAllQuestions = () => {
     setQuestions([])
+    setInspectingIndex(null)
     notify('Question queue cleared.')
   }
 
@@ -787,6 +992,20 @@ export default function Page() {
     <div className="app-shell">
       <Toaster theme="dark" position="bottom-right" toastOptions={{ style: { background: '#111827', color: '#f8fafc', border: '1px solid #263244' } }} />
       
+      {/* Fullscreen Question Inspector Modal */}
+      {inspectingIndex !== null && questions[inspectingIndex] && (
+        <FullscreenInspectorModal
+          questions={questions}
+          currentIndex={inspectingIndex}
+          onClose={() => setInspectingIndex(null)}
+          onIndexChange={setInspectingIndex}
+          onSubjectChange={handleChangeQuestionSubject}
+          onSplit={(q, idx) => setSplittingQuestion({ question: q, index: idx })}
+          onMerge={handleMergeWithNext}
+          onDelete={deleteQuestion}
+        />
+      )}
+
       {/* Question Split / Edit Modal */}
       {splittingQuestion && (
         <SplitModal 
@@ -1078,6 +1297,7 @@ export default function Page() {
                 onClearQuestions={clearAllQuestions}
                 onSplitQuestion={(q: Question, idx: number) => setSplittingQuestion({ question: q, index: idx })}
                 onMergeWithNext={handleMergeWithNext}
+                onInspectQuestion={(idx: number) => setInspectingIndex(idx)}
                 currentFileName={currentFileName}
                 activeSubject={activeCropSubject}
                 onSubjectChange={setActiveCropSubject}
@@ -1510,11 +1730,12 @@ function PDFPage({ pageData, totalPages, onCrop }: { pageData: any, totalPages: 
   )
 }
 
-// Studio Component (PDF Upload, Auto Detect + Manual Crop with Split, Merge & Direct Range Section Assigner)
+// Studio Component (PDF Upload, Auto Detect + Manual Crop with Split, Merge, Quick Range Tag & Fullscreen Preview)
 function Studio({ 
   notify, setModal, loading, error, totalPages, zoom, pagesData, pdfDoc,
   onPDFUpload, onZoomChange, onResetZoom, onCropComplete, questions, 
-  onDeleteQuestion, onClearQuestions, onSplitQuestion, onMergeWithNext, currentFileName, activeSubject, onSubjectChange, onLaunchExam,
+  onDeleteQuestion, onClearQuestions, onSplitQuestion, onMergeWithNext, onInspectQuestion,
+  currentFileName, activeSubject, onSubjectChange, onLaunchExam,
   onRunAutoCrop, isAutoCropping, pageStart, pageEnd, onPageStartChange, onPageEndChange,
   bulkFromQ, bulkToQ, onBulkFromChange, onBulkToChange, onApplyBulkSubject
 }: any) {
@@ -1583,6 +1804,16 @@ function Studio({
               }}
             >
               {isAutoCropping ? <><Loader2 className="animate-spin" /> Detecting...</> : <><Zap /> ⚡ Auto Detect ({pageStart}–{pageEnd})</>}
+            </button>
+          )}
+
+          {questions.length > 0 && (
+            <button 
+              className="secondary-button"
+              onClick={() => onInspectQuestion(0)}
+              style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#67e8f9' }}
+            >
+              <Eye size={14} /> Fullscreen Review ({questions.length})
             </button>
           )}
 
@@ -1775,9 +2006,21 @@ function Studio({
           </div>
 
           <div className="crop-rail" style={{ position: 'sticky', top: '4px', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <div className="crop-rail-head" style={{ position: 'sticky', top: 0, zIndex: 10 }}>
-              <b>Live Cropped Queue</b>
-              <span className="cyber-badge">{questions.length} ITEMS</span>
+            <div className="crop-rail-head" style={{ position: 'sticky', top: 0, zIndex: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <b>Live Cropped Queue</b>
+                <span className="cyber-badge" style={{ marginLeft: '6px' }}>{questions.length} ITEMS</span>
+              </div>
+              {questions.length > 0 && (
+                <button 
+                  className="icon-button subtle" 
+                  onClick={() => onInspectQuestion(0)} 
+                  title="Open Fullscreen Review Modal"
+                  style={{ color: '#06b6d4' }}
+                >
+                  <Maximize2 size={14} />
+                </button>
+              )}
             </div>
 
             {/* Filter buttons in Queue */}
@@ -1821,10 +2064,24 @@ function Studio({
                         <span className="rail-crop-title">Q#{q.id < 10 ? '0' : ''}{q.id} • {(q.subject || 'physics').toUpperCase()}</span>
                         <span className="rail-crop-page">Page {q.page}</span>
                       </div>
-                      <div className="rail-crop-img-wrap">
+                      <div 
+                        className="rail-crop-img-wrap" 
+                        onClick={() => onInspectQuestion(originalIndex)}
+                        style={{ cursor: 'pointer' }}
+                        title="Click to view full screen"
+                      >
                         <img src={q.img} alt={`Q${q.id}`} />
                       </div>
                       <div className="rail-crop-actions">
+                        {/* Fullscreen Inspector Button */}
+                        <button 
+                          className="icon-button subtle" 
+                          onClick={() => onInspectQuestion(originalIndex)}
+                          title="Open Fullscreen Inspector"
+                          style={{ color: '#38bdf8' }}
+                        >
+                          <Maximize2 size={13} />
+                        </button>
                         {/* Merge With Next Button */}
                         {canMerge && (
                           <button 
@@ -1844,9 +2101,6 @@ function Studio({
                           style={{ color: '#06b6d4' }}
                         >
                           <Scissors size={14} />
-                        </button>
-                        <button className="icon-button subtle" onClick={() => notify(`Question #${q.id} (${q.subject || 'physics'})`)}>
-                          <ZoomIn />
                         </button>
                         <button className="icon-button subtle" onClick={() => onDeleteQuestion(originalIndex)}>
                           <Trash2 />
